@@ -11,6 +11,28 @@ export NODE_ENV="${GOOGLE_PHOTOS_MCP_NODE_ENV:-development}"
 
 MCP_DIR=/opt/google-photos-mcp
 MCP_ENTRY="$MCP_DIR/dist/index.js"
+MCP_DATA_DIR=/data/google-photos-mcp
+MCP_RUNTIME_DATA="$MCP_DIR/runtime-data"
+
+mkdir -p "$MCP_DATA_DIR"
+chmod 700 "$MCP_DATA_DIR"
+ln -sfn "$MCP_DATA_DIR" "$MCP_RUNTIME_DATA"
+export TOKEN_STORAGE_PATH="runtime-data/tokens.db"
+
+if command -v bashio >/dev/null 2>&1; then
+  if bashio::config.has_value 'google_photos_mcp_client_id'; then
+    export GOOGLE_CLIENT_ID="$(bashio::config 'google_photos_mcp_client_id')"
+  fi
+  if bashio::config.has_value 'google_photos_mcp_client_secret'; then
+    export GOOGLE_CLIENT_SECRET="$(bashio::config 'google_photos_mcp_client_secret')"
+  fi
+  if bashio::config.has_value 'google_photos_mcp_redirect_uri'; then
+    export GOOGLE_REDIRECT_URI="$(bashio::config 'google_photos_mcp_redirect_uri')"
+  fi
+fi
+
+: "${GOOGLE_REDIRECT_URI:=http://localhost:3000/auth/callback}"
+export GOOGLE_REDIRECT_URI
 
 terminate_children() {
   if [ -n "${APP_PID:-}" ]; then
@@ -24,7 +46,10 @@ terminate_children() {
 trap terminate_children INT TERM EXIT
 
 cd "$MCP_DIR"
-node "$MCP_ENTRY" &
+(
+  umask 077
+  exec node "$MCP_ENTRY"
+) &
 MCP_PID=$!
 
 cd /app
