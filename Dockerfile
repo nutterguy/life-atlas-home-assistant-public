@@ -1,15 +1,16 @@
-ARG GOOGLE_PHOTOS_MCP_REF=2d5d5d5441cfdffa80482a1dfe08078fd4e0199a
 FROM node:22.22.0-alpine AS google_photos_mcp
-ARG GOOGLE_PHOTOS_MCP_REF
 
 RUN apk add --no-cache git python3 make g++
 WORKDIR /opt/google-photos-mcp
-RUN git clone https://github.com/savethepolarbears/google-photos-mcp.git . \
+COPY dependencies/google-photos-mcp.json /tmp/google-photos-mcp.json
+RUN GOOGLE_PHOTOS_MCP_REPOSITORY="$(node -p "require('/tmp/google-photos-mcp.json').repository")" \
+    && GOOGLE_PHOTOS_MCP_REF="$(node -p "require('/tmp/google-photos-mcp.json').ref")" \
+    && git clone "${GOOGLE_PHOTOS_MCP_REPOSITORY}" . \
     && git checkout --detach "${GOOGLE_PHOTOS_MCP_REF}" \
     && npm ci \
     && npm run build \
     && npm prune --omit=dev \
-    && rm -rf .git test coverage
+    && rm -rf .git test coverage /tmp/google-photos-mcp.json
 
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
