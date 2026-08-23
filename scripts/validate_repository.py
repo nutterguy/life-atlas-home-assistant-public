@@ -18,6 +18,23 @@ if missing:
 config = (root / "config.yaml").read_text(encoding="utf-8")
 if not re.search(r'^version:\s*"\d+\.\d+\.\d+"', config, re.MULTILINE):
     raise SystemExit("config.yaml has no semantic version")
+for required_option in (
+    'google_photos_mcp_client_id: "str?"',
+    'google_photos_mcp_client_secret: "password?"',
+    'google_photos_mcp_redirect_uri: "url?"',
+):
+    if required_option not in config:
+        raise SystemExit(f"Missing secure Google Photos MCP option schema: {required_option}")
+
+run_script = (root / "run.sh").read_text(encoding="utf-8")
+for required_fragment in (
+    "MCP_DATA_DIR=/data/google-photos-mcp",
+    'export TOKEN_STORAGE_PATH="runtime-data/tokens.db"',
+    "chmod 700 \"$MCP_DATA_DIR\"",
+    "umask 077",
+):
+    if required_fragment not in run_script:
+        raise SystemExit(f"Google Photos MCP persistent auth setup missing: {required_fragment}")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
 
