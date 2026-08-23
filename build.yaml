@@ -1,0 +1,7 @@
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:3.21
+labels:
+  org.opencontainers.image.title: "Life Atlas"
+  org.opencontainers.image.description: "Private life timeline for Home Assistant"
+
+
