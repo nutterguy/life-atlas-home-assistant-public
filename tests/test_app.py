@@ -124,6 +124,18 @@ class LifeAtlasTests(unittest.TestCase):
         with zipfile.ZipFile(self.app.backup()) as archive:
             self.assertTrue(any(name.startswith("data/media/") for name in archive.namelist()))
 
+    def test_photo_deletion_keeps_shared_file_until_last_reference(self):
+        event_id = self.app.save_event({"title": "Shared photo", "start_date": "2026-08-21"})
+        output = io.BytesIO(); Image.new("RGB", (32, 24), "green").save(output, "PNG")
+        data_url = "data:image/png;base64," + base64.b64encode(output.getvalue()).decode()
+        first = self.app.add_media({"event_id": event_id, "data_url": data_url})
+        second = self.app.add_media({"captured_date": "2026-08-21", "data_url": data_url})
+        path, _ = self.app.media_file(self.app.connect, self.app.DATA, first["id"])
+        self.assertFalse(self.app.delete_media(self.app.connect, self.app.DATA, first["id"])["removed_file"])
+        self.assertTrue(path.exists())
+        self.assertTrue(self.app.delete_media(self.app.connect, self.app.DATA, second["id"])["removed_file"])
+        self.assertFalse(path.exists())
+
     def test_http_health_and_ingress_safe_relative_assets(self):
         server = self.app.ThreadingHTTPServer(("127.0.0.1", 0), self.app.Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
