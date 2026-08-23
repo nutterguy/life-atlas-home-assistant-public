@@ -119,3 +119,30 @@ def media_file(connect, data_dir: Path, media_id: int) -> tuple[Path, str]:
     if root not in path.parents or not path.is_file():
         raise ValueError("Photo file not found")
     return path, row["mime_type"] or "application/octet-stream"
+
+
+def delete_media(connect, data_dir: Path, media_id: int) -> dict:
+    con = connect()
+    try:
+        with con:
+            row = con.execute("SELECT local_path FROM media WHERE id=?", (int(media_id),)).fetchone()
+            if not row:
+                raise ValueError("Photo not found")
+            local_path = row["local_path"] or ""
+            con.execute("DELETE FROM media WHERE id=?", (int(media_id),))
+            remaining = con.execute("SELECT COUNT(*) FROM media WHERE local_path=?", (local_path,)).fetchone()[0] if local_path else 0
+    finally:
+        con.close()
+    removed_file = False
+    if local_path and not remaining:
+        root = data_dir.resolve()
+        path = (root / local_path).resolve()
+        if root in path.parents and path.is_file():
+            path.unlink()
+            removed_file = True
+            if path.parent != root:
+                try:
+                    path.parent.rmdir()
+                except OSError:
+                    pass
+    return {"ok": True, "removed_file": removed_file}

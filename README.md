@@ -10,6 +10,7 @@ Life Atlas is a private, single-user life timeline packaged as a local Home Assi
 - `docs/DATA_MODEL.md`: shared schema concepts and invariants
 - `docs/CHATGPT_INGESTION.md`: safe data synchronization workflow
 - `docs/DEPLOYMENT.md`: clean installation, updates, verification, and recovery
+- `docs/GOOGLE_PHOTOS.md`: Google Photos Picker setup, privacy, and removal
 
 Run `python scripts/validate_repository.py` after cloning and before deployment. The repository intentionally contains no computer-specific address, credential, or personal database.
 The same validation runs automatically on GitHub for pushes and pull requests.
@@ -21,6 +22,7 @@ The same validation runs automatically on GitHub for pushes and pull requests.
 - People, places, trips and relationship timelines
 - Evidence, sources, external links and media metadata
 - Local photo uploads for events, diary days, and people portraits
+- Google Photos Picker for explicitly selecting an event, diary day, or person photo
 - Statistics and a review queue for uncertain events
 - Event creation
 - Downloadable SQLite backup archive and CSV export
@@ -49,7 +51,7 @@ The application stores all durable state in `/data`, the persistent data directo
 /data/media/
 ```
 
-The SQLite schema is intentionally kept compatible with the Windows edition. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Takeout and Google Photos Picker setup live in the Windows edition, while imported photos remain visible and can be supplemented with local uploads here.
+The SQLite schema is intentionally kept compatible with the Windows edition. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Photos Picker is available in both editions. Home Assistant keeps its short-lived Google access token only in browser memory and immediately saves the selected photo locally.
 
 Do not commit personal databases, backups or imports to Git.
 
@@ -74,5 +76,6 @@ Home Assistant-specific behaviour is limited to `config.yaml`, `build.yaml`, `Do
 - Access through Home Assistant is protected by Home Assistant Ingress.
 - The app requests no Home Assistant API access and no host networking.
 - No telemetry or cloud service is used.
+- Google Photos is contacted only when you explicitly connect or choose a photo. The access token is not written to the add-on data directory.
 - The optional Places map loads Leaflet and OpenStreetMap resources over the internet.
 - SQLite data is not encrypted by the app; rely on secured Home Assistant access and encrypted backups where appropriate.

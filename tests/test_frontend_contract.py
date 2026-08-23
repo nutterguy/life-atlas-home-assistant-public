@@ -11,6 +11,8 @@ class FrontendContractTests(unittest.TestCase):
         cls.script = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
         cls.html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
         cls.css = (ROOT / "static" / "v8.css").read_text(encoding="utf-8")
+        cls.photos = (ROOT / "static" / "photo-tools.js").read_text(encoding="utf-8")
+        cls.dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     def test_home_assistant_ingress_requests_remain_relative(self):
         self.assertIn("input.startsWith('/api/')?input.slice(1):input", self.script)
@@ -39,7 +41,17 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("@media(max-width:800px)", self.css)
         self.assertIn("overflow-x:auto", self.css)
 
+    def test_google_picker_tokens_remain_in_browser_memory(self):
+        self.assertIn("browser's memory", self.photos)
+        self.assertIn("window.isSecureContext", self.photos)
+        self.assertIn("event, diary day or person", self.photos)
+        self.assertIn("poll_interval", self.photos)
+        self.assertNotIn("localStorage", self.photos)
+
+    def test_container_includes_photo_backend_modules(self):
+        self.assertIn("google_photos_picker.py", self.dockerfile)
+        self.assertIn("media_store.py", self.dockerfile)
+
 
 if __name__ == "__main__":
     unittest.main()
-
