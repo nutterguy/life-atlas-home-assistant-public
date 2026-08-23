@@ -9,6 +9,7 @@ required = [
     "AGENTS.md", "README.md", "app.py", "google_photos_picker.py", "media_store.py", "schema.sql", "Dockerfile", "run.sh",
     "config.yaml", "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
     "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/DEPLOYMENT.md",
+    "dependencies/google-photos-mcp.json", "scripts/update_google_photos_mcp.py",
 ]
 missing = [item for item in required if not (root / item).exists()]
 if missing:
@@ -19,6 +20,13 @@ if not re.search(r'^version:\s*"\d+\.\d+\.\d+"', config, re.MULTILINE):
     raise SystemExit("config.yaml has no semantic version")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
+
+dependency = json.loads((root / "dependencies/google-photos-mcp.json").read_text(encoding="utf-8"))
+if dependency.get("repository") != "https://github.com/savethepolarbears/google-photos-mcp.git":
+    raise SystemExit("Unexpected Google Photos MCP repository")
+if not re.fullmatch(r"[0-9a-f]{40}", dependency.get("ref", "")):
+    raise SystemExit("Google Photos MCP dependency must be pinned to a full commit SHA")
+
 tracked = subprocess.run(
     ["git", "ls-files"], cwd=root, check=False, capture_output=True, text=True
 ).stdout.splitlines()
