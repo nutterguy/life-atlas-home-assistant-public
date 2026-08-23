@@ -1,5 +1,7 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -u
+
+source /usr/lib/bashio/bashio.sh
 
 export LIFE_ATLAS_DATA_DIR=/data
 export LIFE_ATLAS_HOST=0.0.0.0
@@ -19,16 +21,14 @@ chmod 700 "$MCP_DATA_DIR"
 ln -sfn "$MCP_DATA_DIR" "$MCP_RUNTIME_DATA"
 export TOKEN_STORAGE_PATH="runtime-data/tokens.db"
 
-if command -v bashio >/dev/null 2>&1; then
-  if bashio::config.has_value 'google_photos_mcp_client_id'; then
-    export GOOGLE_CLIENT_ID="$(bashio::config 'google_photos_mcp_client_id')"
-  fi
-  if bashio::config.has_value 'google_photos_mcp_client_secret'; then
-    export GOOGLE_CLIENT_SECRET="$(bashio::config 'google_photos_mcp_client_secret')"
-  fi
-  if bashio::config.has_value 'google_photos_mcp_redirect_uri'; then
-    export GOOGLE_REDIRECT_URI="$(bashio::config 'google_photos_mcp_redirect_uri')"
-  fi
+if bashio::config.has_value 'google_photos_mcp_client_id'; then
+  export GOOGLE_CLIENT_ID="$(bashio::config 'google_photos_mcp_client_id')"
+fi
+if bashio::config.has_value 'google_photos_mcp_client_secret'; then
+  export GOOGLE_CLIENT_SECRET="$(bashio::config 'google_photos_mcp_client_secret')"
+fi
+if bashio::config.has_value 'google_photos_mcp_redirect_uri'; then
+  export GOOGLE_REDIRECT_URI="$(bashio::config 'google_photos_mcp_redirect_uri')"
 fi
 
 : "${GOOGLE_REDIRECT_URI:=http://localhost:3000/auth/callback}"
