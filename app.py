@@ -20,7 +20,12 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
-from media_store import decode_data_url, media_file, store_image
+from media_store import decode_data_url, delete_media, media_file, store_image
+from google_photos_picker import (configure_web as configure_google_photos,
+                                  create_session as create_picker_session,
+                                  disconnect_web as disconnect_google_photos,
+                                  poll_session as poll_picker_session,
+                                  web_status as google_photos_status)
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -31,6 +36,7 @@ STATIC = RESOURCE_ROOT / "static"
 IMPORTS = DATA / "imports"
 BACKUPS = DATA / "backups"
 MEDIA = DATA / "media"
+MAX_JSON_BYTES = 55 * 1024 * 1024
 
 
 def connect():
@@ -115,7 +121,7 @@ def snapshot():
               FROM events GROUP BY substr(start_date,1,4) ORDER BY year DESC"""),
             "daily_media": rows(con, """SELECT * FROM media WHERE event_id IS NULL AND person_id IS NULL
               AND captured_date IS NOT NULL AND captured_date<>'' ORDER BY captured_date DESC,is_featured DESC,id DESC"""),
-            "features": {"photo_upload": True, "takeout_import": False, "google_photos_picker": False},
+            "features": {"photo_upload": True, "takeout_import": False, "google_photos_picker": True},
         }
 
 
@@ -381,6 +387,12 @@ class Handler(SimpleHTTPRequestHandler):
         if route.startswith("/api/media/"):
             path, content_type = media_file(connect, DATA, int(route.rsplit("/", 1)[1]))
             return self.send_media(path, content_type)
+        if route == "/api/google-photos/status": return self.send_json(google_photos_status(DATA))
+        if route.startswith("/api/google-photos/picker/"):
+            try:
+                return self.send_json(poll_picker_session(DATA, connect, route.rsplit("/", 1)[1]))
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if route == "/api/health": return self.send_json({"status": "ok"})
         if route == "/api/export":
             target = export_csv()
@@ -394,6 +406,8 @@ class Handler(SimpleHTTPRequestHandler):
         route = urlparse(self.path).path
         try:
             size = int(self.headers.get("Content-Length", 0))
+            if size < 0 or size > MAX_JSON_BYTES:
+                raise ValueError("Request is too large")
             payload = json.loads(self.rfile.read(size) or b"{}")
             if route == "/api/events":
                 return self.send_json({"id": save_event(payload)}, 201)
@@ -403,6 +417,15 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"id": add_link(payload)}, 201)
             if route == "/api/media":
                 return self.send_json(add_media(payload), 201)
+            if route.startswith("/api/media/") and route.endswith("/delete"):
+                return self.send_json(delete_media(connect, DATA, int(route.split("/")[-2])))
+            if route == "/api/google-photos/configure":
+                return self.send_json(configure_google_photos(DATA, str(payload.get("client_id") or "")))
+            if route == "/api/google-photos/disconnect":
+                return self.send_json(disconnect_google_photos(DATA))
+            if route == "/api/google-photos/picker":
+                token = str(payload.pop("access_token", ""))
+                return self.send_json(create_picker_session(DATA, payload, access_token=token), 201)
             if route.startswith("/api/review/"):
                 item_id = int(route.rsplit("/", 1)[1])
                 resolve_review(item_id, payload.get("outcome"))
