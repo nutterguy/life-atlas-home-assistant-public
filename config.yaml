@@ -1,6 +1,6 @@
 name: "Life Atlas"
 description: "A private, personal life timeline inside Home Assistant"
-version: "0.5.0"
+version: "0.6.0"
 slug: "life_atlas"
 url: "https://github.com/nutterguy/life-atlas-home-assistant-public"
 init: false
