@@ -1,3 +1,5 @@
+ARG BUILD_FROM
+
 FROM node:22.22.0-alpine AS google_photos_mcp
 
 RUN apk add --no-cache git python3 make g++
@@ -12,7 +14,6 @@ RUN GOOGLE_PHOTOS_MCP_REPOSITORY="$(node -p "require('/tmp/google-photos-mcp.jso
     && npm prune --omit=dev \
     && rm -rf .git test coverage /tmp/google-photos-mcp.json
 
-ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 RUN apk add --no-cache python3 py3-pillow libstdc++ libgcc
