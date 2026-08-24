@@ -19,7 +19,7 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.info.outputs.version }}
+      version: ${{ steps.normalize.outputs.version }}
       name: ${{ steps.info.outputs.name }}
       description: ${{ steps.info.outputs.description }}
       url: ${{ steps.info.outputs.url }}
@@ -29,6 +29,10 @@ jobs:
         uses: home-assistant/actions/helpers/info@master
         with:
           path: ./life_atlas
+      - id: normalize
+        env:
+          RAW_VERSION: ${{ steps.info.outputs.version }}
+        run: echo "version=${RAW_VERSION//\"/}" >> "$GITHUB_OUTPUT"
 
   validate:
     runs-on: ubuntu-latest
