@@ -8,7 +8,7 @@ root = Path(__file__).resolve().parents[1]
 required = [
     "AGENTS.md", "README.md", "app.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "restore_service.py", "schema.sql", "Dockerfile", "run.sh",
     "config.yaml", "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
-    "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/DEPLOYMENT.md",
+    "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/SQLITE_RESTORE.md", "docs/DEPLOYMENT.md",
     "dependencies/google-photos-mcp.json", "scripts/update_google_photos_mcp.py",
 ]
 missing = [item for item in required if not (root / item).exists()]

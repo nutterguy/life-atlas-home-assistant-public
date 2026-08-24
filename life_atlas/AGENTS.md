@@ -5,7 +5,7 @@ This private repository is the canonical source for the Home Assistant edition. 
 ## Start here
 
 1. Read `README.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN.md`, and `docs/DATA_MODEL.md`.
-2. Read `docs/CHATGPT_INGESTION.md` before importing or replacing data.
+2. Read `docs/SQLITE_RESTORE.md` before importing or replacing a database. Read `docs/CHATGPT_INGESTION.md` as well when curating or synchronizing records.
 3. Read `docs/DEPLOYMENT.md` before changing a Home Assistant installation.
 4. Run `python scripts/validate_repository.py` before and after changes.
 
@@ -17,6 +17,7 @@ This private repository is the canonical source for the Home Assistant edition. 
 - Never commit personal databases, backups, imports, credentials, hostnames, IP addresses, SSH keys, Ingress tokens, or machine-specific paths.
 - Back up the add-on before database replacement or schema migration.
 - Transfer only a consistent SQLite snapshot; never copy live `-wal` or `-shm` files.
+- Preserve the restore session token across every upload chunk, validation, and commit request; never log or persist it.
 - Keep `schema.sql` compatible with `nutterguy/life-atlas-windows`.
 - Run integrity, foreign-key, backend, frontend-contract, and live health checks after deployment.
 

@@ -32,12 +32,9 @@ After any dependency bump, review the upstream diff, run `python scripts/validat
 
 ## Restore a database through Home Assistant Ingress
 
-1. In the source edition, finish local processing and create either one standalone SQLite snapshot with the SQLite backup API or `VACUUM INTO`, or a Life Atlas ZIP containing `data/life_atlas.sqlite3` plus its exact `data/media` tree. Do not use a copied live main file, `-wal`, or `-shm` file.
-2. Make a Home Assistant backup containing Life Atlas.
-3. Open Life Atlas through Home Assistant, choose **Restore database**, and select the snapshot.
-4. Wait for integrity, foreign-key, schema, version, and matching-media validation. Compare the displayed entity counts with the source.
-5. Type `RESTORE` and confirm. Normal API requests briefly receive a maintenance response while the app drains work, checkpoints the live WAL, retains a rollback snapshot, atomically replaces the database, and verifies the installed copy.
-6. Confirm the expected version and aggregate counts. Restore audit records contain timestamps, checksums, counts, and outcomes—not personal rows or the local source filename.
+Follow `docs/SQLITE_RESTORE.md`. It is the canonical operator runbook and maintainer contract for preparing a consistent snapshot or matching-media ZIP, backing up, uploading, validating, confirming, verifying, troubleshooting, and rolling back.
+
+In summary: create a Home Assistant backup, upload through the authenticated **Restore database** screen, review all validation results and aggregate counts, and type `RESTORE` only when the preview matches the source. Never use a copied live main file, `-wal`, or `-shm` file.
 
 A standalone-database upload deliberately preserves `/data/media` and blocks replacement if the candidate refers to missing or unsafe local media paths. A Life Atlas ZIP may introduce matching media without SSH: the app applies ZIP safety limits, verifies the exact media set and hashes, refuses conflicting existing paths, and atomically adds only missing content-addressed files before switching databases. A failed database switch can therefore leave only harmless unreferenced new media; it never removes or overwrites an existing media file.
 

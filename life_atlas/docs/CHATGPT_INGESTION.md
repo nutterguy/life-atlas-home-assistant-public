@@ -1,6 +1,6 @@
 # ChatGPT ingestion and synchronization
 
-The preferred workflow is to curate data in the private Windows repository, validate it there, create a consistent SQLite snapshot, and upload that snapshot through Life Atlas in Home Assistant.
+The preferred workflow is to curate data in the private Windows repository, validate it there, create a consistent SQLite snapshot, and upload that snapshot through Life Atlas in Home Assistant. The generic database replacement procedure and safety contract are in `docs/SQLITE_RESTORE.md`; this document adds ingestion-specific rules.
 
 ## Required process
 
