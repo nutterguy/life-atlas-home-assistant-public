@@ -6,9 +6,10 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 required = [
-    "AGENTS.md", "README.md", "app.py", "schema.sql", "Dockerfile", "run.sh",
+    "AGENTS.md", "README.md", "app.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "schema.sql", "Dockerfile", "run.sh",
     "config.yaml", "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
-    "docs/CHATGPT_INGESTION.md", "docs/DEPLOYMENT.md",
+    "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/DEPLOYMENT.md",
+    "dependencies/google-photos-mcp.json", "scripts/update_google_photos_mcp.py",
 ]
 missing = [item for item in required if not (root / item).exists()]
 if missing:
@@ -27,8 +28,45 @@ if runtime_version.group(1) != config_version.group(1):
         f"Version mismatch: config.yaml={config_version.group(1)}, "
         f"run.sh={runtime_version.group(1)}"
     )
+for required_option in (
+    'google_photos_mcp_client_id: "str?"',
+    'google_photos_mcp_client_secret: "password?"',
+    'google_photos_mcp_redirect_uri: "url?"',
+):
+    if required_option not in config:
+        raise SystemExit(f"Missing secure Google Photos MCP option schema: {required_option}")
+
+run_script = (root / "run.sh").read_text(encoding="utf-8")
+for required_fragment in (
+    "MCP_DATA_DIR=/data/google-photos-mcp",
+    'export TOKEN_STORAGE_PATH="runtime-data/tokens.db"',
+    "chmod 700 \"$MCP_DATA_DIR\"",
+    "umask 077",
+    "LIFE_ATLAS_BACKEND_PORT=8100",
+    "python3 /app/mcp_ingress_proxy.py",
+):
+    if required_fragment not in run_script:
+        raise SystemExit(f"Google Photos MCP persistent auth/Ingress setup missing: {required_fragment}")
+
+proxy = (root / "mcp_ingress_proxy.py").read_text(encoding="utf-8")
+for required_fragment in (
+    'route == "/api/google-photos-mcp/status"',
+    'route == "/api/google-photos-mcp/auth"',
+    'route == "/api/google-photos-mcp/auth/callback"',
+):
+    if required_fragment not in proxy:
+        raise SystemExit(f"Google Photos MCP Ingress bridge missing: {required_fragment}")
+if '"/mcp"' in proxy:
+    raise SystemExit("The raw MCP endpoint must not be exposed through Home Assistant Ingress")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
+
+dependency = json.loads((root / "dependencies/google-photos-mcp.json").read_text(encoding="utf-8"))
+if dependency.get("repository") != "https://github.com/savethepolarbears/google-photos-mcp.git":
+    raise SystemExit("Unexpected Google Photos MCP repository")
+if not re.fullmatch(r"[0-9a-f]{40}", dependency.get("ref", "")):
+    raise SystemExit("Google Photos MCP dependency must be pinned to a full commit SHA")
+
 git_root = subprocess.run(
     ["git", "rev-parse", "--show-toplevel"], cwd=root, check=False,
     capture_output=True, text=True,

@@ -8,6 +8,7 @@ import threading
 import unittest
 import urllib.request
 import zipfile
+from contextlib import closing
 from pathlib import Path
 
 from PIL import Image
@@ -136,6 +137,74 @@ class LifeAtlasTests(unittest.TestCase):
         self.assertTrue(path.is_file()); self.assertEqual(mime, "image/webp")
         with zipfile.ZipFile(self.app.backup()) as archive:
             self.assertTrue(any(name.startswith("data/media/") for name in archive.namelist()))
+
+    def test_photo_deletion_keeps_shared_file_until_last_reference(self):
+        event_id = self.app.save_event({"title": "Shared photo", "start_date": "2026-08-21"})
+        output = io.BytesIO(); Image.new("RGB", (32, 24), "green").save(output, "PNG")
+        data_url = "data:image/png;base64," + base64.b64encode(output.getvalue()).decode()
+        first = self.app.add_media({"event_id": event_id, "data_url": data_url})
+        second = self.app.add_media({"captured_date": "2026-08-21", "data_url": data_url})
+        path, _ = self.app.media_file(self.app.connect, self.app.DATA, first["id"])
+        self.assertFalse(self.app.delete_media(self.app.connect, self.app.DATA, first["id"])["removed_file"])
+        self.assertTrue(path.exists())
+        self.assertTrue(self.app.delete_media(self.app.connect, self.app.DATA, second["id"])["removed_file"])
+        self.assertFalse(path.exists())
+
+    def test_edit_person_manages_canonical_name_and_aliases(self):
+        with closing(self.app.connect()) as connection, connection:
+            person_id = connection.execute("INSERT INTO people(name) VALUES('Catherine')").lastrowid
+        self.app.update_person(person_id, {"name": "Catherine Skews", "aliases": ["Cat", " Cat Skews ", "cat"]})
+        detail = self.app.entity_detail("person", person_id)
+        self.assertEqual(detail["item"]["name"], "Catherine Skews")
+        self.assertEqual([item["alias"] for item in detail["aliases"]], ["Cat", "Cat Skews"])
+        with closing(self.app.connect()) as connection, connection:
+            self.assertEqual(self.app.resolve_person(connection, "  CAT  ", create=False), person_id)
+
+    def test_person_edit_rejects_name_or_alias_owned_by_another_person(self):
+        with closing(self.app.connect()) as connection, connection:
+            first = connection.execute("INSERT INTO people(name) VALUES('First')").lastrowid
+            second = connection.execute("INSERT INTO people(name) VALUES('Second')").lastrowid
+        self.app.update_person(first, {"name": "First", "aliases": ["Shared"]})
+        with self.assertRaisesRegex(ValueError, "alias already belongs"):
+            self.app.update_person(second, {"name": "Second", "aliases": ["shared"]})
+
+    def test_merge_people_moves_all_relationships_deduplicates_and_audits(self):
+        event_one = self.app.save_event({"title": "One", "start_date": "2026-01-01"})
+        event_two = self.app.save_event({"title": "Two", "start_date": "2026-01-02"})
+        with closing(self.app.connect()) as connection, connection:
+            target = connection.execute("INSERT INTO people(name,relationship,notes) VALUES('Catherine Skews','Friend','Target notes')").lastrowid
+            source = connection.execute("INSERT INTO people(name,relationship,notes) VALUES('Cat','Friend','Source notes')").lastrowid
+            connection.execute("INSERT INTO person_aliases(person_id,alias,normalized_alias,source) VALUES(?,?,?,'manual')", (source, "Kitty", "kitty"))
+            connection.execute("INSERT INTO event_people(event_id,person_id,role) VALUES(?,?,'with')", (event_one, target))
+            connection.execute("INSERT INTO event_people(event_id,person_id,role) VALUES(?,?,'with')", (event_one, source))
+            connection.execute("INSERT INTO event_people(event_id,person_id,role) VALUES(?,?,'with')", (event_two, source))
+            connection.execute("INSERT INTO media(person_id,caption) VALUES(?,?)", (source, "Portrait"))
+            connection.execute("INSERT INTO entity_links(entity_type,entity_id,label,url) VALUES('person',?,'Profile','https://example.test/cat')", (source,))
+        preview = self.app.merge_preview(source, target)
+        self.assertEqual(preview["impact"]["events"], 2)
+        self.assertEqual(preview["impact"]["overlapping_event_relationships"], 1)
+        result = self.app.merge_people(source, target)
+        self.assertEqual(result["target_person_id"], target)
+        detail = self.app.entity_detail("person", target)
+        self.assertEqual(detail["item"]["notes"], "Target notes")
+        self.assertEqual(len(detail["events"]), 2)
+        self.assertEqual({item["alias"] for item in detail["aliases"]}, {"Cat", "Kitty"})
+        self.assertEqual(len(detail["media"]), 1)
+        self.assertEqual(len(detail["links"]), 1)
+        self.assertEqual(len(detail["merge_history"]), 1)
+        with closing(self.app.connect()) as connection, connection:
+            self.assertIsNone(connection.execute("SELECT 1 FROM people WHERE id=?", (source,)).fetchone())
+            self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_merge_rejects_self_and_repeated_merge(self):
+        with closing(self.app.connect()) as connection, connection:
+            target = connection.execute("INSERT INTO people(name) VALUES('Catherine Skews')").lastrowid
+            source = connection.execute("INSERT INTO people(name) VALUES('Cat')").lastrowid
+        with self.assertRaisesRegex(ValueError, "themselves"):
+            self.app.merge_people(source, source)
+        self.app.merge_people(source, target)
+        with self.assertRaisesRegex(ValueError, "already merged"):
+            self.app.merge_people(source, target)
 
     def test_http_health_and_ingress_safe_relative_assets(self):
         server = self.app.ThreadingHTTPServer(("127.0.0.1", 0), self.app.Handler)

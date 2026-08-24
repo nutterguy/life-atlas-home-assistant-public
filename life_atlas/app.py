@@ -20,7 +20,12 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
-from media_store import decode_data_url, media_file, store_image
+from media_store import decode_data_url, delete_media, media_file, store_image
+from google_photos_picker import (configure_web as configure_google_photos,
+                                  create_session as create_picker_session,
+                                  disconnect_web as disconnect_google_photos,
+                                  poll_session as poll_picker_session,
+                                  web_status as google_photos_status)
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -31,6 +36,7 @@ STATIC = RESOURCE_ROOT / "static"
 IMPORTS = DATA / "imports"
 BACKUPS = DATA / "backups"
 MEDIA = DATA / "media"
+MAX_JSON_BYTES = 55 * 1024 * 1024
 
 
 def connect():
@@ -122,11 +128,139 @@ def rows(con, sql, params=()):
     return [dict(r) for r in con.execute(sql, params).fetchall()]
 
 
+def normalize_person_name(value):
+    return " ".join(str(value or "").strip().split()).casefold()
+
+
+def _person_name_owner(con, normalized_name, exclude_person_id=None):
+    for person in con.execute("SELECT id,name FROM people"):
+        if person["id"] != exclude_person_id and normalize_person_name(person["name"]) == normalized_name:
+            return person["id"]
+    alias = con.execute("SELECT person_id FROM person_aliases WHERE normalized_alias=?", (normalized_name,)).fetchone()
+    if alias and alias["person_id"] != exclude_person_id:
+        return alias["person_id"]
+    return None
+
+
+def resolve_person(con, name, create=True):
+    display_name = " ".join(str(name or "").strip().split())
+    normalized = normalize_person_name(display_name)
+    if not normalized:
+        raise ValueError("Person name is required")
+    for person in con.execute("SELECT id,name FROM people"):
+        if normalize_person_name(person["name"]) == normalized:
+            return person["id"]
+    alias = con.execute("SELECT person_id FROM person_aliases WHERE normalized_alias=?", (normalized,)).fetchone()
+    if alias:
+        return alias["person_id"]
+    if not create:
+        return None
+    return con.execute("INSERT INTO people(name) VALUES(?)", (display_name,)).lastrowid
+
+
+def update_person(person_id, payload):
+    name = " ".join(str(payload.get("name", "")).strip().split())
+    normalized_name = normalize_person_name(name)
+    aliases = []
+    seen = set()
+    for value in payload.get("aliases", []):
+        alias = " ".join(str(value or "").strip().split())
+        normalized = normalize_person_name(alias)
+        if alias and normalized != normalized_name and normalized not in seen:
+            aliases.append((alias, normalized)); seen.add(normalized)
+    if not name:
+        raise ValueError("Person name is required")
+    with closing(connect()) as con, con:
+        if not con.execute("SELECT 1 FROM people WHERE id=?", (person_id,)).fetchone():
+            raise ValueError("Person not found")
+        owner = _person_name_owner(con, normalized_name, person_id)
+        if owner:
+            raise ValueError("That name already belongs to another person or alias")
+        for _, normalized in aliases:
+            owner = _person_name_owner(con, normalized, person_id)
+            if owner:
+                raise ValueError("An alias already belongs to another person")
+        con.execute("UPDATE people SET name=? WHERE id=?", (name, person_id))
+        con.execute("DELETE FROM person_aliases WHERE person_id=?", (person_id,))
+        con.executemany("INSERT INTO person_aliases(person_id,alias,normalized_alias,source) VALUES(?,?,?,'manual')",
+                       [(person_id, alias, normalized) for alias, normalized in aliases])
+    return person_id
+
+
+def _merge_preview(con, source_person_id, target_person_id):
+    if source_person_id == target_person_id:
+        raise ValueError("A person cannot be merged into themselves")
+    source = con.execute("SELECT * FROM people WHERE id=?", (source_person_id,)).fetchone()
+    target = con.execute("SELECT * FROM people WHERE id=?", (target_person_id,)).fetchone()
+    if not source:
+        prior = con.execute("SELECT target_person_id,target_name FROM person_merge_history WHERE source_person_id=?", (source_person_id,)).fetchone()
+        if prior:
+            raise ValueError(f"This person was already merged into {prior['target_name']}")
+        raise ValueError("Source person not found")
+    if not target:
+        raise ValueError("Target person not found")
+    event_relationships = con.execute("SELECT COUNT(*) FROM event_people WHERE person_id=?", (source_person_id,)).fetchone()[0]
+    overlap = con.execute("""SELECT COUNT(*) FROM event_people source
+      JOIN event_people target ON target.event_id=source.event_id AND target.role=source.role
+      WHERE source.person_id=? AND target.person_id=?""", (source_person_id, target_person_id)).fetchone()[0]
+    impact = {
+        "event_relationships": event_relationships,
+        "events": con.execute("SELECT COUNT(DISTINCT event_id) FROM event_people WHERE person_id=?", (source_person_id,)).fetchone()[0],
+        "overlapping_event_relationships": overlap,
+        "media": con.execute("SELECT COUNT(*) FROM media WHERE person_id=?", (source_person_id,)).fetchone()[0],
+        "external_links": con.execute("SELECT COUNT(*) FROM entity_links WHERE entity_type='person' AND entity_id=?", (source_person_id,)).fetchone()[0],
+        "aliases": con.execute("SELECT COUNT(*) FROM person_aliases WHERE person_id=?", (source_person_id,)).fetchone()[0] + 1,
+    }
+    return {"source": dict(source), "target": dict(target), "impact": impact}
+
+
+def merge_preview(source_person_id, target_person_id):
+    with closing(connect()) as con:
+        return _merge_preview(con, source_person_id, target_person_id)
+
+
+def merge_people(source_person_id, target_person_id, retain_source_alias=True):
+    with closing(connect()) as con, con:
+        preview = _merge_preview(con, source_person_id, target_person_id)
+        source, target, impact = preview["source"], preview["target"], preview["impact"]
+        aliases = rows(con, "SELECT alias,normalized_alias,source FROM person_aliases WHERE person_id=?", (source_person_id,))
+        if retain_source_alias:
+            aliases.append({"alias": source["name"], "normalized_alias": normalize_person_name(source["name"]), "source": "merge"})
+        for alias in aliases:
+            normalized = alias["normalized_alias"]
+            if normalized == normalize_person_name(target["name"]):
+                continue
+            owner = _person_name_owner(con, normalized, source_person_id)
+            if owner not in (None, target_person_id):
+                raise ValueError(f"Alias '{alias['alias']}' belongs to another person")
+        con.execute("""INSERT OR IGNORE INTO event_people(event_id,person_id,role)
+          SELECT event_id,?,role FROM event_people WHERE person_id=?""", (target_person_id, source_person_id))
+        con.execute("DELETE FROM event_people WHERE person_id=?", (source_person_id,))
+        con.execute("UPDATE media SET person_id=? WHERE person_id=?", (target_person_id, source_person_id))
+        con.execute("""DELETE FROM entity_links AS source WHERE entity_type='person' AND entity_id=? AND EXISTS (
+          SELECT 1 FROM entity_links target WHERE target.entity_type='person' AND target.entity_id=?
+          AND target.label=source.label AND target.url=source.url AND target.link_type=source.link_type AND target.notes=source.notes)""",
+          (source_person_id, target_person_id))
+        con.execute("UPDATE entity_links SET entity_id=? WHERE entity_type='person' AND entity_id=?", (target_person_id, source_person_id))
+        con.execute("DELETE FROM person_aliases WHERE person_id=?", (source_person_id,))
+        for alias in aliases:
+            if alias["normalized_alias"] != normalize_person_name(target["name"]):
+                con.execute("""INSERT INTO person_aliases(person_id,alias,normalized_alias,source)
+                  VALUES(?,?,?,?) ON CONFLICT(normalized_alias) DO NOTHING""",
+                  (target_person_id, alias["alias"], alias["normalized_alias"], alias["source"]))
+        con.execute("""INSERT INTO person_merge_history(source_person_id,source_name,target_person_id,target_name,impact_json,source_snapshot_json)
+          VALUES(?,?,?,?,?,?)""", (source_person_id, source["name"], target_person_id, target["name"],
+          json.dumps(impact, sort_keys=True), json.dumps({"person": source, "aliases": aliases}, sort_keys=True)))
+        con.execute("DELETE FROM people WHERE id=?", (source_person_id,))
+    return {"target_person_id": target_person_id, "target_name": target["name"], "impact": impact}
+
+
 def snapshot():
     with closing(connect()) as con, con:
         events = rows(con, """SELECT e.*, p.name place_name, p.city, p.country, p.latitude, p.longitude,
           t.title trip_title,
           GROUP_CONCAT(DISTINCT pe.name) people,
+          (SELECT GROUP_CONCAT(pa.alias) FROM event_people ep2 JOIN person_aliases pa ON pa.person_id=ep2.person_id WHERE ep2.event_id=e.id) people_aliases,
           (SELECT COUNT(*) FROM evidence ev WHERE ev.event_id=e.id) evidence_count
           FROM events e LEFT JOIN places p ON p.id=e.place_id LEFT JOIN trips t ON t.id=e.trip_id
           LEFT JOIN event_people ep ON ep.event_id=e.id LEFT JOIN people pe ON pe.id=ep.person_id
@@ -135,6 +269,7 @@ def snapshot():
             "events": events,
             "places": rows(con, """SELECT p.*, COUNT(e.id) event_count FROM places p LEFT JOIN events e ON e.place_id=p.id GROUP BY p.id ORDER BY event_count DESC, p.name"""),
             "people": rows(con, """SELECT p.*, COUNT(ep.event_id) event_count, MIN(e.start_date) first_event, MAX(e.start_date) latest_event,
+              (SELECT GROUP_CONCAT(pa.alias, '|') FROM person_aliases pa WHERE pa.person_id=p.id) aliases,
               (SELECT m.id FROM media m WHERE m.person_id=p.id ORDER BY m.is_featured DESC,m.id DESC LIMIT 1) profile_media_id
               FROM people p LEFT JOIN event_people ep ON ep.person_id=p.id LEFT JOIN events e ON e.id=ep.event_id GROUP BY p.id ORDER BY event_count DESC, p.name"""),
             "trips": rows(con, """SELECT t.*, COUNT(DISTINCT e.id) event_count,
@@ -154,7 +289,7 @@ def snapshot():
               FROM events GROUP BY substr(start_date,1,4) ORDER BY year DESC"""),
             "daily_media": rows(con, """SELECT * FROM media WHERE event_id IS NULL AND person_id IS NULL
               AND captured_date IS NOT NULL AND captured_date<>'' ORDER BY captured_date DESC,is_featured DESC,id DESC"""),
-            "features": {"photo_upload": True, "takeout_import": False, "google_photos_picker": False},
+            "features": {"photo_upload": True, "takeout_import": False, "google_photos_picker": True},
         }
 
 
@@ -169,6 +304,7 @@ def entity_detail(kind, entity_id):
         result = {"kind": kind, "item": dict(item), "links": rows(con, "SELECT * FROM entity_links WHERE entity_type=? AND entity_id=? ORDER BY label", (kind, entity_id))}
         base = """SELECT e.*, p.name place_name, p.city, p.country, t.title trip_title,
           GROUP_CONCAT(DISTINCT pe.name) people,
+          (SELECT GROUP_CONCAT(pa.alias) FROM event_people ep2 JOIN person_aliases pa ON pa.person_id=ep2.person_id WHERE ep2.event_id=e.id) people_aliases,
           (SELECT COUNT(*) FROM evidence ev WHERE ev.event_id=e.id) evidence_count
           FROM events e LEFT JOIN places p ON p.id=e.place_id LEFT JOIN trips t ON t.id=e.trip_id
           LEFT JOIN event_people ep ON ep.event_id=e.id LEFT JOIN people pe ON pe.id=ep.person_id"""
@@ -185,6 +321,8 @@ def entity_detail(kind, entity_id):
         else:
             result["events"] = rows(con, base + " JOIN event_people selected ON selected.event_id=e.id WHERE selected.person_id=? GROUP BY e.id ORDER BY e.start_date DESC", (entity_id,))
             result["media"] = rows(con, "SELECT * FROM media WHERE person_id=? ORDER BY is_featured DESC,id DESC", (entity_id,))
+            result["aliases"] = rows(con, "SELECT id,alias,source,created_at FROM person_aliases WHERE person_id=? ORDER BY alias COLLATE NOCASE", (entity_id,))
+            result["merge_history"] = rows(con, "SELECT id,source_name,target_name,impact_json,merged_at FROM person_merge_history WHERE target_person_id=? ORDER BY merged_at DESC", (entity_id,))
         return result
 
 
@@ -330,6 +468,9 @@ def generic_csv_import(path):
                   record.get("importance", "medium"), "needs_review" if status == "uncertain" else "clear"))
                 if status == "uncertain":
                     con.execute("INSERT INTO review_items(event_id,issue_type,summary,details) VALUES(?,?,?,?)", (cur.lastrowid, "uncertain_event", f"Review: {record['title']}", "Imported uncertain event requires corroboration."))
+                for person_name in filter(None, (value.strip() for value in record.get("people", "").split(";"))):
+                    person_id = resolve_person(con, person_name)
+                    con.execute("INSERT OR IGNORE INTO event_people(event_id,person_id,role) VALUES(?,?,'with')", (cur.lastrowid, person_id))
                 count += 1
         con.execute("INSERT INTO imports(filename,checksum,row_count) VALUES(?,?,?)", (path.name, digest, count))
     return {"message": "Import complete", "count": count}
@@ -410,16 +551,30 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_GET(self):
-        route = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        route = parsed.path
         if route == "/api/snapshot": return self.send_json(snapshot())
         if route.startswith("/api/detail/"):
             parts = route.strip("/").split("/")
             return self.send_json(entity_detail(parts[2], int(parts[3])))
         if route.startswith("/api/weather/"):
             return self.send_json(event_weather(int(route.rsplit("/", 1)[1])))
+        if route.startswith("/api/people/") and route.endswith("/merge-preview"):
+            source_id = int(route.strip("/").split("/")[2])
+            target_id = int(parse_qs(parsed.query).get("target_id", [""])[0])
+            try:
+                return self.send_json(merge_preview(source_id, target_id))
+            except Exception as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if route.startswith("/api/media/"):
             path, content_type = media_file(connect, DATA, int(route.rsplit("/", 1)[1]))
             return self.send_media(path, content_type)
+        if route == "/api/google-photos/status": return self.send_json(google_photos_status(DATA))
+        if route.startswith("/api/google-photos/picker/"):
+            try:
+                return self.send_json(poll_picker_session(DATA, connect, route.rsplit("/", 1)[1]))
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if route == "/api/health": return self.send_json({"status": "ok"})
         if route == "/api/export":
             target = export_csv()
@@ -433,15 +588,31 @@ class Handler(SimpleHTTPRequestHandler):
         route = urlparse(self.path).path
         try:
             size = int(self.headers.get("Content-Length", 0))
+            if size < 0 or size > MAX_JSON_BYTES:
+                raise ValueError("Request is too large")
             payload = json.loads(self.rfile.read(size) or b"{}")
             if route == "/api/events":
                 return self.send_json({"id": save_event(payload)}, 201)
             if route.startswith("/api/events/"):
                 return self.send_json({"id": update_event(int(route.rsplit("/", 1)[1]), payload)})
+            if route.startswith("/api/people/") and route.endswith("/merge"):
+                source_id = int(route.strip("/").split("/")[2])
+                return self.send_json(merge_people(source_id, int(payload.get("target_id")), payload.get("retain_source_alias", True)))
+            if route.startswith("/api/people/"):
+                return self.send_json({"id": update_person(int(route.rsplit("/", 1)[1]), payload)})
             if route == "/api/links":
                 return self.send_json({"id": add_link(payload)}, 201)
             if route == "/api/media":
                 return self.send_json(add_media(payload), 201)
+            if route.startswith("/api/media/") and route.endswith("/delete"):
+                return self.send_json(delete_media(connect, DATA, int(route.split("/")[-2])))
+            if route == "/api/google-photos/configure":
+                return self.send_json(configure_google_photos(DATA, str(payload.get("client_id") or "")))
+            if route == "/api/google-photos/disconnect":
+                return self.send_json(disconnect_google_photos(DATA))
+            if route == "/api/google-photos/picker":
+                token = str(payload.pop("access_token", ""))
+                return self.send_json(create_picker_session(DATA, payload, access_token=token), 201)
             if route.startswith("/api/review/"):
                 item_id = int(route.rsplit("/", 1)[1])
                 resolve_review(item_id, payload.get("outcome"))

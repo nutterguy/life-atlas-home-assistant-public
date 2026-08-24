@@ -44,6 +44,28 @@ CREATE TABLE IF NOT EXISTS people (
   notes TEXT DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS person_aliases (
+  id INTEGER PRIMARY KEY,
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  alias TEXT NOT NULL,
+  normalized_alias TEXT NOT NULL UNIQUE,
+  source TEXT NOT NULL DEFAULT 'manual',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(person_id, alias)
+);
+
+CREATE TABLE IF NOT EXISTS person_merge_history (
+  id INTEGER PRIMARY KEY,
+  source_person_id INTEGER NOT NULL,
+  source_name TEXT NOT NULL,
+  target_person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
+  target_name TEXT NOT NULL,
+  impact_json TEXT NOT NULL,
+  source_snapshot_json TEXT NOT NULL,
+  merged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(source_person_id)
+);
+
 CREATE TABLE IF NOT EXISTS event_people (
   event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
@@ -160,3 +182,5 @@ CREATE INDEX IF NOT EXISTS idx_review_status ON review_items(status);
 CREATE INDEX IF NOT EXISTS idx_entity_links ON entity_links(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_chapters_dates ON chapters(start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_media_event ON media(event_id, captured_date);
+CREATE INDEX IF NOT EXISTS idx_person_aliases_person ON person_aliases(person_id);
+CREATE INDEX IF NOT EXISTS idx_person_merge_target ON person_merge_history(target_person_id, merged_at);

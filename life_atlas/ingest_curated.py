@@ -9,6 +9,18 @@ def ingest(path):
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     app.initialise()
     with app.connect() as con:
+        for person in payload.get("people", []):
+            record = {"name": person} if isinstance(person, str) else person
+            person_id = app.resolve_person(con, record["name"])
+            for alias in record.get("aliases", []):
+                normalized = app.normalize_person_name(alias)
+                owner = app._person_name_owner(con, normalized, person_id)
+                if owner:
+                    raise ValueError(f"Alias already belongs to another person: {alias}")
+                if normalized != app.normalize_person_name(record["name"]):
+                    con.execute("""INSERT INTO person_aliases(person_id,alias,normalized_alias,source)
+                      VALUES(?,?,?,'ingestion') ON CONFLICT(normalized_alias) DO NOTHING""",
+                      (person_id, " ".join(alias.strip().split()), normalized))
         for chapter in payload.get("chapters", []):
             con.execute("INSERT INTO chapters(title,start_date,end_date,summary,color,confidence) VALUES(?,?,?,?,?,?)", (
                 chapter["title"], chapter["start_date"], chapter.get("end_date"), chapter.get("summary", ""),
@@ -24,6 +36,9 @@ def ingest(path):
                 "needs_review" if status == "uncertain" else "clear", float(event.get("notable_score", .5)),
                 event.get("date_precision", "day"), event.get("memory", "")))
             event_id = cur.lastrowid
+            for person_name in event.get("people", []):
+                person_id = app.resolve_person(con, person_name)
+                con.execute("INSERT OR IGNORE INTO event_people(event_id,person_id,role) VALUES(?,?,'with')", (event_id, person_id))
             for evidence in event.get("evidence", []):
                 source = con.execute("SELECT id FROM sources WHERE name=?", (evidence.get("source"),)).fetchone()
                 if not source:

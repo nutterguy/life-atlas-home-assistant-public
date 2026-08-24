@@ -1,6 +1,6 @@
 name: "Life Atlas"
 description: "A private, personal life timeline inside Home Assistant"
-version: "0.6.3"
+version: "0.7.0"
 slug: "life_atlas"
 url: "https://github.com/nutterguy/life-atlas-home-assistant-public"
 init: false
@@ -16,4 +16,7 @@ panel_title: "Life Atlas"
 homeassistant_api: false
 host_network: false
 options: {}
-schema: {}
+schema:
+  google_photos_mcp_client_id: "str?"
+  google_photos_mcp_client_secret: "password?"
+  google_photos_mcp_redirect_uri: "url?"

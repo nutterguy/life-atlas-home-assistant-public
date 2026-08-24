@@ -1,4 +1,10 @@
 {
+  "people": [
+    {
+      "name": "Example Person",
+      "aliases": ["Example"]
+    }
+  ],
   "events": [
     {
       "title": "Example curated event",
@@ -11,6 +17,7 @@
       "importance": "medium",
       "date_precision": "day",
       "memory": "",
+      "people": ["Example"],
       "evidence": [
         {
           "source": "Gmail",

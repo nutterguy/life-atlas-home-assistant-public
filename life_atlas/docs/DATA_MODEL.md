@@ -4,6 +4,7 @@
 
 - `events` stores dated records, attendance status, confidence, importance, review state, and narrative fields.
 - `people`, `places`, `trips`, and `chapters` provide alternate ways to navigate events.
+- `person_aliases` stores exact alternate names for search and ingestion; `person_merge_history` audits completed merges.
 - `event_people` and `event_tags` provide many-to-many relationships.
 - `sources` and `evidence` retain provenance.
 - `review_items` holds unresolved questions.
