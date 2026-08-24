@@ -83,6 +83,18 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("media_store.py", self.dockerfile)
         self.assertIn("mcp_ingress_proxy.py", self.dockerfile)
 
+    def test_restore_database_uses_ingress_relative_chunked_workflow(self):
+        restore = (ROOT / "static" / "restore-tools.js").read_text(encoding="utf-8")
+        self.assertIn('id="restore"', self.html)
+        self.assertIn('id="restore-dialog"', self.html)
+        self.assertIn("/api/restore/sessions", restore)
+        self.assertIn("X-Life-Atlas-Restore-Token", restore)
+        self.assertIn("application/octet-stream", restore)
+        self.assertIn("2*1024*1024", restore)
+        self.assertIn("Type <b>RESTORE</b>", restore)
+        self.assertIn("backup: cold", self.config)
+        self.assertIn("restore_service.py", self.dockerfile)
+
     def test_people_management_has_edit_merge_preview_and_confirmation(self):
         for contract in ("openPersonEditor", "openPersonMerge", "loadMergePreview", "confirmPersonMerge"):
             self.assertIn(contract, self.script)

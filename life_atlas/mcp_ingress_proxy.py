@@ -16,10 +16,12 @@ PROXY_HOST = os.environ.get("LIFE_ATLAS_HOST", "0.0.0.0")
 PROXY_PORT = int(os.environ.get("LIFE_ATLAS_PORT", "8099"))
 TOKEN_DB = Path(os.environ.get("LIFE_ATLAS_DATA_DIR", "/data")) / "google-photos-mcp" / "tokens.db"
 HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade"}
+MAX_PROXY_REQUEST_BYTES = 56 * 1024 * 1024
+MAX_RESTORE_CHUNK_BYTES = 4 * 1024 * 1024
 
 
-def request_local(port: int, method: str, target: str, body: bytes | None = None, headers: dict[str, str] | None = None):
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
+def request_local(port: int, method: str, target: str, body: bytes | None = None, headers: dict[str, str] | None = None, timeout: int = 15):
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
         connection.request(method, target, body=body, headers=headers or {})
         response = connection.getresponse()
@@ -76,10 +78,15 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def relay(self, port: int, target: str):
         size = int(self.headers.get("Content-Length", "0") or 0)
+        route = urlparse(target).path
+        limit = MAX_RESTORE_CHUNK_BYTES if route.startswith("/api/restore/sessions/") and route.endswith("/chunks") else MAX_PROXY_REQUEST_BYTES
+        if size < 0 or size > limit:
+            return self.send_json({"error": "Request is too large"}, 413)
         body = self.rfile.read(size) if size else None
         forwarded = {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS and k.lower() != "host"}
         try:
-            status, reason, headers, response_body = request_local(port, self.command, target, body, forwarded)
+            timeout = 300 if route.startswith("/api/restore/") else 15
+            status, reason, headers, response_body = request_local(port, self.command, target, body, forwarded, timeout=timeout)
         except Exception as exc:
             return self.send_json({"error": f"Local service unavailable: {type(exc).__name__}"}, 503)
         self.send_response(status, reason)

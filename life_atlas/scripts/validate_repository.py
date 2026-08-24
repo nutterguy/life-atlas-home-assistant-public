@@ -6,7 +6,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 required = [
-    "AGENTS.md", "README.md", "app.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "schema.sql", "Dockerfile", "run.sh",
+    "AGENTS.md", "README.md", "app.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "restore_service.py", "schema.sql", "Dockerfile", "run.sh",
     "config.yaml", "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
     "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/DEPLOYMENT.md",
     "dependencies/google-photos-mcp.json", "scripts/update_google_photos_mcp.py",
@@ -58,6 +58,10 @@ for required_fragment in (
         raise SystemExit(f"Google Photos MCP Ingress bridge missing: {required_fragment}")
 if '"/mcp"' in proxy:
     raise SystemExit("The raw MCP endpoint must not be exposed through Home Assistant Ingress")
+if "MAX_RESTORE_CHUNK_BYTES" not in proxy:
+    raise SystemExit("Ingress proxy must bound database restore chunks")
+if "backup: cold" not in config:
+    raise SystemExit("Life Atlas must use cold Home Assistant backups for consistent SQLite state")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
 

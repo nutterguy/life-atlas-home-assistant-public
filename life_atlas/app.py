@@ -21,6 +21,8 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
 from media_store import decode_data_url, delete_media, media_file, store_image
+from restore_service import (APPLICATION_ID, SCHEMA_VERSION, MaintenanceBusy,
+                             RequestGate, RestoreError, RestoreManager)
 from google_photos_picker import (configure_web as configure_google_photos,
                                   create_session as create_picker_session,
                                   disconnect_web as disconnect_google_photos,
@@ -37,6 +39,8 @@ IMPORTS = DATA / "imports"
 BACKUPS = DATA / "backups"
 MEDIA = DATA / "media"
 MAX_JSON_BYTES = 55 * 1024 * 1024
+REQUEST_GATE = RequestGate()
+RESTORE = None
 
 
 def connect():
@@ -52,6 +56,7 @@ def initialise():
     IMPORTS.mkdir(exist_ok=True)
     BACKUPS.mkdir(exist_ok=True)
     MEDIA.mkdir(exist_ok=True)
+    restore_manager().initialise()
     seed_sample = os.environ.get("LIFE_ATLAS_SEED_SAMPLE", "false").lower() == "true"
     with closing(connect()) as con, con:
         con.executescript((RESOURCE_ROOT / "schema.sql").read_text(encoding="utf-8"))
@@ -88,6 +93,31 @@ def migrate(con):
             con.execute(f"ALTER TABLE media ADD COLUMN {name} {definition}")
     con.execute("CREATE INDEX IF NOT EXISTS idx_media_person ON media(person_id,is_featured)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_media_date ON media(captured_date,is_featured)")
+    con.execute(f"PRAGMA application_id={APPLICATION_ID}")
+    con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+
+def prepare_database(path):
+    """Apply known forward-only migrations to an isolated database copy."""
+    con = sqlite3.connect(path)
+    try:
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA trusted_schema=OFF")
+        con.execute("PRAGMA cell_size_check=ON")
+        con.execute("PRAGMA mmap_size=0")
+        con.execute("PRAGMA foreign_keys=ON")
+        with con:
+            con.executescript((RESOURCE_ROOT / "schema.sql").read_text(encoding="utf-8"))
+            migrate(con)
+    finally:
+        con.close()
+
+
+def restore_manager():
+    global RESTORE
+    if RESTORE is None:
+        RESTORE = RestoreManager(DATA, DB, REQUEST_GATE, prepare_database)
+    return RESTORE
 
 
 def seed(con):
@@ -533,6 +563,7 @@ class Handler(SimpleHTTPRequestHandler):
     def send_json(self, value, status=200):
         body = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def send_file(self, path, content_type, download_name):
@@ -553,6 +584,17 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         route = parsed.path
+        if route.startswith("/api/restore/"):
+            return self._restore_get(route)
+        if route.startswith("/api/"):
+            try:
+                with REQUEST_GATE.request():
+                    return self._do_GET(parsed, route)
+            except MaintenanceBusy as exc:
+                return self.send_json({"error": str(exc)}, 503)
+        return super().do_GET()
+
+    def _do_GET(self, parsed, route):
         if route == "/api/snapshot": return self.send_json(snapshot())
         if route.startswith("/api/detail/"):
             parts = route.strip("/").split("/")
@@ -582,43 +624,93 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "/api/backup":
             target = backup()
             return self.send_file(target, "application/zip", target.name)
-        return super().do_GET()
+        return self.send_json({"error": "Not found"}, 404)
+
+    def _restore_get(self, route):
+        try:
+            if route == "/api/restore/capabilities":
+                return self.send_json(restore_manager().capabilities())
+            parts = route.strip("/").split("/")
+            if len(parts) == 4 and parts[:3] == ["api", "restore", "sessions"]:
+                return self.send_json(restore_manager().status(parts[3], self.headers.get("X-Life-Atlas-Restore-Token", "")))
+            return self.send_json({"error": "Not found"}, 404)
+        except RestoreError as exc:
+            return self.send_json({"error": str(exc)}, 400)
 
     def do_POST(self):
-        route = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        route = parsed.path
+        if route.startswith("/api/restore/"):
+            return self._restore_post(parsed, route)
         try:
-            size = int(self.headers.get("Content-Length", 0))
-            if size < 0 or size > MAX_JSON_BYTES:
-                raise ValueError("Request is too large")
-            payload = json.loads(self.rfile.read(size) or b"{}")
-            if route == "/api/events":
-                return self.send_json({"id": save_event(payload)}, 201)
-            if route.startswith("/api/events/"):
-                return self.send_json({"id": update_event(int(route.rsplit("/", 1)[1]), payload)})
-            if route.startswith("/api/people/") and route.endswith("/merge"):
-                source_id = int(route.strip("/").split("/")[2])
-                return self.send_json(merge_people(source_id, int(payload.get("target_id")), payload.get("retain_source_alias", True)))
-            if route.startswith("/api/people/"):
-                return self.send_json({"id": update_person(int(route.rsplit("/", 1)[1]), payload)})
-            if route == "/api/links":
-                return self.send_json({"id": add_link(payload)}, 201)
-            if route == "/api/media":
-                return self.send_json(add_media(payload), 201)
-            if route.startswith("/api/media/") and route.endswith("/delete"):
-                return self.send_json(delete_media(connect, DATA, int(route.split("/")[-2])))
-            if route == "/api/google-photos/configure":
-                return self.send_json(configure_google_photos(DATA, str(payload.get("client_id") or "")))
-            if route == "/api/google-photos/disconnect":
-                return self.send_json(disconnect_google_photos(DATA))
-            if route == "/api/google-photos/picker":
-                token = str(payload.pop("access_token", ""))
-                return self.send_json(create_picker_session(DATA, payload, access_token=token), 201)
-            if route.startswith("/api/review/"):
-                item_id = int(route.rsplit("/", 1)[1])
-                resolve_review(item_id, payload.get("outcome"))
-                return self.send_json({"ok": True})
-            return self.send_json({"error": "Not found"}, 404)
+            with REQUEST_GATE.request():
+                size = int(self.headers.get("Content-Length", 0))
+                if size < 0 or size > MAX_JSON_BYTES:
+                    raise ValueError("Request is too large")
+                payload = json.loads(self.rfile.read(size) or b"{}")
+                if route == "/api/events":
+                    return self.send_json({"id": save_event(payload)}, 201)
+                if route.startswith("/api/events/"):
+                    return self.send_json({"id": update_event(int(route.rsplit("/", 1)[1]), payload)})
+                if route.startswith("/api/people/") and route.endswith("/merge"):
+                    source_id = int(route.strip("/").split("/")[2])
+                    return self.send_json(merge_people(source_id, int(payload.get("target_id")), payload.get("retain_source_alias", True)))
+                if route.startswith("/api/people/"):
+                    return self.send_json({"id": update_person(int(route.rsplit("/", 1)[1]), payload)})
+                if route == "/api/links":
+                    return self.send_json({"id": add_link(payload)}, 201)
+                if route == "/api/media":
+                    return self.send_json(add_media(payload), 201)
+                if route.startswith("/api/media/") and route.endswith("/delete"):
+                    return self.send_json(delete_media(connect, DATA, int(route.split("/")[-2])))
+                if route == "/api/google-photos/configure":
+                    return self.send_json(configure_google_photos(DATA, str(payload.get("client_id") or "")))
+                if route == "/api/google-photos/disconnect":
+                    return self.send_json(disconnect_google_photos(DATA))
+                if route == "/api/google-photos/picker":
+                    token = str(payload.pop("access_token", ""))
+                    return self.send_json(create_picker_session(DATA, payload, access_token=token), 201)
+                if route.startswith("/api/review/"):
+                    item_id = int(route.rsplit("/", 1)[1])
+                    resolve_review(item_id, payload.get("outcome"))
+                    return self.send_json({"ok": True})
+                return self.send_json({"error": "Not found"}, 404)
+        except MaintenanceBusy as exc:
+            return self.send_json({"error": str(exc)}, 503)
         except Exception as exc:
+            return self.send_json({"error": str(exc)}, 400)
+
+    def _restore_post(self, parsed, route):
+        try:
+            manager = restore_manager()
+            parts = route.strip("/").split("/")
+            token = self.headers.get("X-Life-Atlas-Restore-Token", "")
+            size = int(self.headers.get("Content-Length", 0))
+            if len(parts) == 5 and parts[:3] == ["api", "restore", "sessions"] and parts[4] == "chunks":
+                if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/octet-stream":
+                    raise RestoreError("Restore chunks require application/octet-stream")
+                if size <= 0 or size > manager.capabilities()["max_chunk_bytes"]:
+                    raise RestoreError("Upload chunk is too large")
+                offset = int(parse_qs(parsed.query).get("offset", ["-1"])[0])
+                return self.send_json(manager.append_chunk(parts[3], token, offset, self.rfile.read(size)))
+            if size < 0 or size > 64 * 1024:
+                raise RestoreError("Restore request is too large")
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                raise RestoreError("Restore actions require application/json")
+            payload = json.loads(self.rfile.read(size) or b"{}")
+            if route == "/api/restore/sessions":
+                return self.send_json(manager.create_session(int(payload.get("total_size", 0))), 201)
+            if len(parts) == 5 and parts[:3] == ["api", "restore", "sessions"]:
+                if parts[4] == "validate":
+                    return self.send_json(manager.validate_session(parts[3], token))
+                if parts[4] == "commit":
+                    return self.send_json(manager.commit_session(parts[3], token, str(payload.get("confirmation", ""))))
+            if len(parts) == 5 and parts[:3] == ["api", "restore", "backups"] and parts[4] == "rollback":
+                return self.send_json(manager.rollback(parts[3], str(payload.get("confirmation", ""))))
+            return self.send_json({"error": "Not found"}, 404)
+        except MaintenanceBusy as exc:
+            return self.send_json({"error": str(exc)}, 503)
+        except (RestoreError, ValueError, json.JSONDecodeError) as exc:
             return self.send_json({"error": str(exc)}, 400)
 
 

@@ -25,7 +25,7 @@ The same validation runs automatically on GitHub for pushes and pull requests.
 - Google Photos Picker for explicitly selecting an event, diary day, or person photo
 - Statistics and a review queue for uncertain events
 - Event creation
-- Downloadable SQLite backup archive and CSV export
+- Downloadable backup archive, guarded SQLite restore, and CSV export
 - Responsive layouts for desktop, tablet and phone
 - Database compatibility with the portable Windows Life Atlas application
 
@@ -44,9 +44,11 @@ The application stores all durable state in `/data`, the persistent data directo
 /data/imports/
 /data/backups/
 /data/media/
+/data/restore-backups/
+/data/restore-staging/
 ```
 
-The SQLite schema is intentionally kept compatible with the Windows edition. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Photos Picker is available in both editions. Home Assistant keeps its short-lived Google access token only in browser memory and immediately saves the selected photo locally.
+The SQLite schema is intentionally kept compatible with the Windows edition. **Restore database** accepts one standalone SQLite snapshot, validates it, creates an automatic rollback database, and replaces the current database without replacing media. Every local media path in the uploaded database must already exist under `/data/media`. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Photos Picker is available in both editions. Home Assistant keeps its short-lived Google access token only in browser memory and immediately saves the selected photo locally.
 
 Do not commit personal databases, backups or imports to Git.
 

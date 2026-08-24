@@ -28,7 +28,7 @@ RUN apk add --no-cache python3 py3-pillow libstdc++ libgcc
 
 WORKDIR /app
 COPY app.py mcp_ingress_proxy.py google_photos_picker.py schema.sql ingest_curated.py curated-ingest-template.json ./
-COPY media_store.py connectors.py connector_http.py connector_runtime.py runtime_entry.py ./
+COPY media_store.py restore_service.py connectors.py connector_http.py connector_runtime.py runtime_entry.py ./
 COPY static ./static
 COPY --from=google_photos_mcp /usr/local/bin/node /usr/local/bin/node
 COPY --from=google_photos_mcp /opt/google-photos-mcp /opt/google-photos-mcp

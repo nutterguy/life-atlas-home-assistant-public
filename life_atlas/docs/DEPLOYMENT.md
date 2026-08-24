@@ -30,20 +30,32 @@ python scripts/update_google_photos_mcp.py <ref>
 
 After any dependency bump, review the upstream diff, run `python scripts/validate_repository.py`, and allow the GitHub validation workflow to complete. CI builds the complete Home Assistant add-on image, including the pinned MCP, so dependency or native-module build failures are caught before merge. Do not point the Docker build directly at a moving branch such as `main`.
 
-## Deploy a database snapshot and media
+## Restore a database through Home Assistant Ingress
 
-1. Validate the source snapshot with `PRAGMA integrity_check` and `PRAGMA foreign_key_check`.
-2. Create a partial Home Assistant backup containing `local_life_atlas`.
-3. Stop Life Atlas.
-4. Copy the existing `/data/life_atlas.sqlite3` and `/data/media` to `/data/backups`.
-5. Replace the database with the consistent source snapshot and restore its matching `media` directory. Do not copy WAL/SHM files.
-6. Start Life Atlas.
-7. Verify `/api/health`, the live app version, logs, and aggregate entity counts.
-8. Remove temporary transfer files and any temporary image-layer database copy.
+1. In the source edition, finish local processing and create one standalone SQLite snapshot with the SQLite backup API or `VACUUM INTO`. Do not use a copied live main file, `-wal`, or `-shm` file.
+2. Make a Home Assistant backup containing Life Atlas.
+3. Open Life Atlas through Home Assistant, choose **Restore database**, and select the snapshot.
+4. Wait for integrity, foreign-key, schema, version, and matching-media validation. Compare the displayed entity counts with the source.
+5. Type `RESTORE` and confirm. Normal API requests briefly receive a maintenance response while the app drains work, checkpoints the live WAL, retains a rollback snapshot, atomically replaces the database, and verifies the installed copy.
+6. Confirm the expected version and aggregate counts. Restore audit records contain timestamps, checksums, counts, and outcomes—not personal rows or the local source filename.
+
+The upload is database-only. It deliberately preserves `/data/media` and blocks replacement if the candidate refers to missing or unsafe local media paths. Move matching media by a separately reviewed, stopped-app workflow before restoring a database that introduces new media.
+
+Upload sessions expire after 24 hours. The default database limit is 512 MiB and can be changed with `LIFE_ATLAS_MAX_RESTORE_BYTES`; the browser uses 2 MiB chunks and the server accepts no chunk over 4 MiB. Staging requires enough free space for the upload, prepared copy, current database backup, and verification.
+
+## Stopped-app SSH fallback
+
+Use this only when Ingress is unavailable or matching media must also move:
+
+1. Create a Home Assistant backup containing Life Atlas, then stop the app.
+2. Retain a consistent copy of `/data/life_atlas.sqlite3` and the matching `/data/media` tree.
+3. Copy the standalone source snapshot into the same filesystem as the destination, validate it there, and rename it into place. Never transfer source WAL/SHM files.
+4. If media changes, transfer the matching media tree as one reviewed set while the app remains stopped.
+5. Start Life Atlas and verify health, version, integrity, foreign keys, media availability, and aggregate counts.
 
 ## Recovery
 
-Restore the partial Home Assistant backup, or stop the app and restore the retained SQLite backup. Start it and repeat the health and count checks.
+Open **Restore database** and select an automatic rollback copy, or restore the Home Assistant backup. The rollback action first snapshots the current database, so reversing a rollback remains possible. If the UI is unavailable, stop the app and restore a retained SQLite backup, then repeat the health, integrity and count checks.
 
 ## Release discipline
 
