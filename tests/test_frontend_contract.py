@@ -13,6 +13,8 @@ class FrontendContractTests(unittest.TestCase):
         cls.css = (ROOT / "static" / "v8.css").read_text(encoding="utf-8")
         cls.photos = (ROOT / "static" / "photo-tools.js").read_text(encoding="utf-8")
         cls.dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        cls.run_script = (ROOT / "run.sh").read_text(encoding="utf-8")
+        cls.config = (ROOT / "config.yaml").read_text(encoding="utf-8")
 
     def test_home_assistant_ingress_requests_remain_relative(self):
         self.assertIn("input.startsWith('/api/')?input.slice(1):input", self.script)
@@ -48,9 +50,24 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("poll_interval", self.photos)
         self.assertNotIn("localStorage", self.photos)
 
+    def test_google_photos_mcp_setup_uses_ingress_relative_routes(self):
+        self.assertIn('id="photos"', self.html)
+        self.assertIn('id="photos-dialog"', self.html)
+        self.assertIn("api/google-photos-mcp/status", self.photos)
+        self.assertIn("api/google-photos-mcp/auth/callback", self.photos)
+        self.assertIn("new URL('api/google-photos-mcp/auth'", self.photos)
+        self.assertIn("/data/google-photos-mcp/tokens.db", self.photos)
+
+    def test_mcp_port_is_not_exposed_by_home_assistant(self):
+        self.assertIn("host_network: false", self.config)
+        self.assertNotIn("3000/tcp", self.config)
+        self.assertIn("LIFE_ATLAS_BACKEND_PORT=8100", self.run_script)
+        self.assertIn("mcp_ingress_proxy.py", self.dockerfile)
+
     def test_container_includes_photo_backend_modules(self):
         self.assertIn("google_photos_picker.py", self.dockerfile)
         self.assertIn("media_store.py", self.dockerfile)
+        self.assertIn("mcp_ingress_proxy.py", self.dockerfile)
 
 
 if __name__ == "__main__":
