@@ -10,7 +10,10 @@ class FrontendContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.script = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
         cls.html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-        cls.css = (ROOT / "static" / "v8.css").read_text(encoding="utf-8")
+        cls.css = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((ROOT / "static").glob("*.css"))
+        )
 
     def test_home_assistant_ingress_requests_remain_relative(self):
         self.assertIn("input.startsWith('/api/')?input.slice(1):input", self.script)
@@ -38,6 +41,17 @@ class FrontendContractTests(unittest.TestCase):
     def test_mobile_navigation_is_horizontally_scrollable(self):
         self.assertIn("@media(max-width:800px)", self.css)
         self.assertIn("overflow-x:auto", self.css)
+
+    def test_timeline_layout_uses_rendered_pixel_widths(self):
+        self.assertIn("function timelineMetrics", self.script)
+        self.assertIn("occupiedWidth", self.script)
+        self.assertIn("timelineScale=8", self.script)
+        self.assertIn("setTimelineScale", self.script)
+
+    def test_timeline_points_have_accessible_targets_and_focus_labels(self):
+        self.assertIn("aria-label=", self.script)
+        self.assertIn("width:24px!important", self.css)
+        self.assertIn(".swim-event.point:focus-visible span", self.css)
 
 
 if __name__ == "__main__":
