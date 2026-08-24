@@ -1,9 +1,9 @@
-name: Validate Home Assistant edition
+name: Validate distribution
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -15,4 +15,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install Pillow
-      - run: python scripts/validate_repository.py
+      - run: python life_atlas/scripts/validate_repository.py

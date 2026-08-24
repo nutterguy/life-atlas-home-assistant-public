@@ -1,2 +1,0 @@
-.month{min-height:165px}.month-bars{position:relative;min-height:110px;border-top:1px solid var(--line);background:repeating-linear-gradient(90deg,transparent 0,transparent calc(25% - 1px),#26304a 25%)}.month-bars .month-event{position:absolute;left:var(--left);top:var(--top);width:var(--width);min-width:18px;margin:0;padding:5px 7px;font-size:11px}
-

@@ -1,0 +1,87 @@
+name: Build Life Atlas image
+
+on:
+  push:
+    branches: [main]
+    paths: ["life_atlas/**", ".github/workflows/build.yml"]
+  pull_request:
+    paths: ["life_atlas/**", ".github/workflows/build.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: life-atlas-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      name: ${{ steps.info.outputs.name }}
+      description: ${{ steps.info.outputs.description }}
+      url: ${{ steps.info.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: info
+        uses: home-assistant/actions/helpers/info@master
+        with:
+          path: ./life_atlas
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install Pillow
+      - run: python life_atlas/scripts/validate_repository.py
+
+  build:
+    needs: [prepare, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: home-assistant/builder/actions/build-image@2026.06.0
+        with:
+          arch: amd64
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: ./life_atlas
+          image: ghcr.io/nutterguy/amd64-life-atlas-home-assistant
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          labels: |
+            io.hass.type=app
+            io.hass.name=${{ needs.prepare.outputs.name }}
+            io.hass.description=${{ needs.prepare.outputs.description }}
+            io.hass.url=${{ needs.prepare.outputs.url }}
+          push: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+          version: ${{ needs.prepare.outputs.version }}
+
+  manifest:
+    needs: [prepare, build]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.06.0
+        with:
+          architectures: '["amd64"]'
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: life-atlas-home-assistant
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          registry-prefix: ghcr.io/nutterguy

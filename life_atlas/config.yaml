@@ -1,0 +1,19 @@
+name: "Life Atlas"
+description: "A private, personal life timeline inside Home Assistant"
+version: "0.6.1"
+slug: "life_atlas"
+url: "https://github.com/nutterguy/life-atlas-home-assistant-public"
+init: false
+arch:
+  - amd64
+image: "ghcr.io/nutterguy/life-atlas-home-assistant"
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:map-marker-path"
+panel_title: "Life Atlas"
+homeassistant_api: false
+host_network: false
+options: {}
+schema: {}
