@@ -90,6 +90,8 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("/api/restore/sessions", restore)
         self.assertIn("X-Life-Atlas-Restore-Token", restore)
         self.assertIn("application/octet-stream", restore)
+        self.assertIn(".sqlite3,.zip", restore)
+        self.assertIn("package_media_files", restore)
         self.assertIn("2*1024*1024", restore)
         self.assertIn("Type <b>RESTORE</b>", restore)
         self.assertIn("backup: cold", self.config)

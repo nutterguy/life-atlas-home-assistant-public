@@ -48,7 +48,7 @@ The application stores all durable state in `/data`, the persistent data directo
 /data/restore-staging/
 ```
 
-The SQLite schema is intentionally kept compatible with the Windows edition. **Restore database** accepts one standalone SQLite snapshot, validates it, creates an automatic rollback database, and replaces the current database without replacing media. Every local media path in the uploaded database must already exist under `/data/media`. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Photos Picker is available in both editions. Home Assistant keeps its short-lived Google access token only in browser memory and immediately saves the selected photo locally.
+The SQLite schema is intentionally kept compatible with the Windows edition. **Restore database** accepts either one standalone SQLite snapshot or a guarded Life Atlas ZIP containing `data/life_atlas.sqlite3` and its exact `data/media` tree. A standalone database must match media already under `/data/media`; a package installs only verified content-addressed media files and refuses conflicts. Both paths create an automatic rollback database before replacing records. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Photos Picker is available in both editions. Home Assistant keeps its short-lived Google access token only in browser memory and immediately saves the selected photo locally.
 
 Do not commit personal databases, backups or imports to Git.
 

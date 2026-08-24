@@ -62,6 +62,10 @@ if "MAX_RESTORE_CHUNK_BYTES" not in proxy:
     raise SystemExit("Ingress proxy must bound database restore chunks")
 if "backup: cold" not in config:
     raise SystemExit("Life Atlas must use cold Home Assistant backups for consistent SQLite state")
+restore = (root / "restore_service.py").read_text(encoding="utf-8")
+for required_fragment in ("MAX_PACKAGE_EXPANDED_BYTES", "MAX_PACKAGE_RATIO", "_install_media", "content-addressed name"):
+    if required_fragment not in restore:
+        raise SystemExit(f"Guarded restore ZIP validation missing: {required_fragment}")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
 

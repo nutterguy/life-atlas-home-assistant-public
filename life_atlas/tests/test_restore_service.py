@@ -6,6 +6,8 @@ import tempfile
 import threading
 import unittest
 import urllib.request
+import zipfile
+import hashlib
 from pathlib import Path
 
 
@@ -47,6 +49,27 @@ class RestoreServiceTests(unittest.TestCase):
             self.manager.append_chunk(session["id"], session["token"], offset, raw[offset:offset + chunk_size])
         return session
 
+    def package(self, title="Packaged replacement"):
+        source = self.candidate(title)
+        raw = b"verified packaged image"
+        digest = hashlib.sha256(raw).hexdigest()
+        relative = f"media/{digest[:2]}/{digest}.webp"
+        con = sqlite3.connect(source)
+        try:
+            with con:
+                event_id = con.execute("SELECT id FROM events").fetchone()[0]
+                con.execute(
+                    "INSERT INTO media(event_id,local_path,sha256) VALUES(?,?,?)",
+                    (event_id, relative, digest),
+                )
+        finally:
+            con.close()
+        package = Path(self.temp.name) / "restore.zip"
+        with zipfile.ZipFile(package, "w", zipfile.ZIP_STORED) as archive:
+            archive.write(source, "data/life_atlas.sqlite3")
+            archive.writestr(f"data/{relative}", raw)
+        return package, relative, raw
+
     def test_valid_restore_creates_rollback_and_replaces_database(self):
         self.app.save_event({"title": "Original", "start_date": "2026-01-01"})
         session = self.upload(self.candidate())
@@ -63,6 +86,72 @@ class RestoreServiceTests(unittest.TestCase):
         restored = self.manager.commit_session(session["id"], session["token"], "RESTORE")
         self.manager.rollback(restored["backup_id"], "ROLLBACK")
         self.assertEqual(self.app.snapshot()["events"][0]["title"], "Original")
+
+    def test_zip_restore_installs_verified_media_before_database_switch(self):
+        package, relative, raw = self.package()
+        session = self.upload(package)
+        validated = self.manager.validate_session(session["id"], session["token"])
+        self.assertEqual(validated["report"]["package_kind"], "zip")
+        self.assertEqual(validated["report"]["package_media_files"], 1)
+        result = self.manager.commit_session(session["id"], session["token"], "RESTORE")
+        self.assertEqual(result["media"], {"copied": 1, "existing": 0})
+        self.assertEqual((Path(self.temp.name) / relative).read_bytes(), raw)
+        self.assertEqual(self.app.snapshot()["events"][0]["title"], "Packaged replacement")
+
+    def test_zip_restore_rejects_traversal_and_unmatched_media(self):
+        unsafe = Path(self.temp.name) / "unsafe.zip"
+        with zipfile.ZipFile(unsafe, "w") as archive:
+            archive.write(self.candidate("Unsafe"), "data/life_atlas.sqlite3")
+            archive.writestr("data/media/../../escape.webp", b"bad")
+        session = self.upload(unsafe)
+        with self.assertRaisesRegex(ValueError, "unsupported path"):
+            self.manager.validate_session(session["id"], session["token"])
+
+        unmatched = Path(self.temp.name) / "unmatched.zip"
+        extra = b"extra"
+        extra_hash = hashlib.sha256(extra).hexdigest()
+        with zipfile.ZipFile(unmatched, "w") as archive:
+            archive.write(self.candidate("Unmatched"), "data/life_atlas.sqlite3")
+            archive.writestr(f"data/media/{extra_hash[:2]}/{extra_hash}.webp", extra)
+        session = self.upload(unmatched)
+        with self.assertRaisesRegex(ValueError, "do not exactly match"):
+            self.manager.validate_session(session["id"], session["token"])
+
+    def test_zip_restore_rejects_symlinks_and_content_address_mismatch(self):
+        symlink = Path(self.temp.name) / "symlink.zip"
+        with zipfile.ZipFile(symlink, "w") as archive:
+            archive.write(self.candidate("Symlink"), "data/life_atlas.sqlite3")
+            item = zipfile.ZipInfo("data/media/aa/" + "a" * 64 + ".webp")
+            item.create_system = 3
+            item.external_attr = 0o120777 << 16
+            archive.writestr(item, b"target")
+        session = self.upload(symlink)
+        with self.assertRaisesRegex(ValueError, "symbolic links"):
+            self.manager.validate_session(session["id"], session["token"])
+
+        package, _, _ = self.package("Wrong content address")
+        broken = Path(self.temp.name) / "wrong-address.zip"
+        with zipfile.ZipFile(package) as source, zipfile.ZipFile(broken, "w") as target:
+            for item in source.infolist():
+                data = source.read(item)
+                if item.filename.endswith(".webp"):
+                    data += b"tampered"
+                target.writestr(item.filename, data)
+        session = self.upload(broken)
+        with self.assertRaisesRegex(ValueError, "content-addressed name"):
+            self.manager.validate_session(session["id"], session["token"])
+
+    def test_zip_restore_refuses_conflicting_existing_media(self):
+        self.app.save_event({"title": "Still live", "start_date": "2026-01-01"})
+        package, relative, _ = self.package("Blocked replacement")
+        target = Path(self.temp.name) / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"conflicting content")
+        session = self.upload(package)
+        self.manager.validate_session(session["id"], session["token"])
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            self.manager.commit_session(session["id"], session["token"], "RESTORE")
+        self.assertEqual(self.app.snapshot()["events"][0]["title"], "Still live")
 
     def test_rejects_non_sqlite_and_wrong_upload_offset(self):
         invalid = b"not a sqlite database"

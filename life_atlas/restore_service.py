@@ -10,17 +10,22 @@ import sqlite3
 import threading
 import time
 import uuid
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 SQLITE_HEADER = b"SQLite format 3\x00"
+ZIP_HEADER = b"PK\x03\x04"
 APPLICATION_ID = 0x4C41544C  # "LATL"
 SCHEMA_VERSION = 1
 MAX_CHUNK_BYTES = 4 * 1024 * 1024
 DEFAULT_MAX_UPLOAD_BYTES = 512 * 1024 * 1024
 SESSION_TTL_SECONDS = 24 * 60 * 60
+MAX_PACKAGE_ENTRIES = 5000
+MAX_PACKAGE_EXPANDED_BYTES = 1024 * 1024 * 1024
+MAX_PACKAGE_RATIO = 100
 SESSION_ID = re.compile(r"^[0-9a-f]{32}$")
 BACKUP_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$")
 
@@ -151,6 +156,7 @@ class RestoreManager:
             "max_chunk_bytes": MAX_CHUNK_BYTES,
             "confirmation": "RESTORE",
             "schema_version": SCHEMA_VERSION,
+            "accepts_restore_package": True,
             "backups": self.list_backups(),
         }
 
@@ -206,16 +212,17 @@ class RestoreManager:
         with self._lock:
             state, path = self._load_session(session_id, token)
             if state["status"] not in {"uploaded", "validated"}:
-                raise RestoreError("Finish uploading the complete database before validation")
+                raise RestoreError("Finish uploading the complete database or restore package before validation")
             upload = path / "upload.sqlite3.part"
             if upload.stat().st_size != state["total_size"]:
                 raise RestoreError("Uploaded size does not match the declared database size")
             candidate = path / "candidate.sqlite3"
             candidate.unlink(missing_ok=True)
-            initial = self._inspect_database(upload, check_media=False)
+            source_database, media_root, package = self._stage_upload(upload, path)
+            initial = self._inspect_database(source_database, check_media=False)
             if initial["user_version"] > SCHEMA_VERSION:
                 raise RestoreError("This database was created by a newer Life Atlas schema")
-            source = _safe_connection(upload)
+            source = _safe_connection(source_database)
             target = sqlite3.connect(candidate)
             try:
                 source.backup(target)
@@ -223,10 +230,12 @@ class RestoreManager:
                 target.close()
                 source.close()
             self.prepare_database(candidate)
-            report = self._inspect_database(candidate, check_media=True)
+            report = self._inspect_database(candidate, check_media=True, media_root=media_root)
+            report.update(package)
             state.update({
                 "status": "validated",
                 "sha256": _sha256(upload),
+                "package_kind": package["package_kind"],
                 "report": report,
                 "validated_at": _utc_now(),
             })
@@ -243,7 +252,10 @@ class RestoreManager:
                 raise RestoreError("Validate this database before restoring it")
             if _sha256(path / "upload.sqlite3.part") != state.get("sha256"):
                 raise RestoreError("The uploaded database changed after validation")
-            result = self._switch_database(path / "candidate.sqlite3", source="upload", source_checksum=state["sha256"])
+            staged_media = path / "package" / "data" / "media" if state.get("package_kind") == "zip" else None
+            result = self._switch_database(
+                path / "candidate.sqlite3", source="upload", source_checksum=state["sha256"], staged_media=staged_media
+            )
             state.update({"status": "committed", "committed_at": _utc_now(), "backup_id": result["backup_id"]})
             _atomic_json(path / "session.json", state)
             return {**self._public_state(state), **result}
@@ -271,10 +283,12 @@ class RestoreManager:
                 result.append({"id": backup_id, "size": path.stat().st_size})
         return result
 
-    def _switch_database(self, candidate: Path, *, source: str, source_checksum: str) -> dict:
-        self._inspect_database(candidate, check_media=True)
+    def _switch_database(self, candidate: Path, *, source: str, source_checksum: str, staged_media: Path | None = None) -> dict:
+        validation_root = staged_media.parent if staged_media else self.data_dir
+        self._inspect_database(candidate, check_media=True, media_root=validation_root)
         current_size = self.database.stat().st_size if self.database.exists() else 0
-        if shutil.disk_usage(self.data_dir).free < candidate.stat().st_size + current_size + 16 * 1024 * 1024:
+        media_size = sum(item.stat().st_size for item in staged_media.rglob("*") if item.is_file()) if staged_media else 0
+        if shutil.disk_usage(self.data_dir).free < candidate.stat().st_size + current_size + media_size + 16 * 1024 * 1024:
             raise RestoreError("There is not enough free space to create the rollback and incoming databases")
         backup_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + secrets.token_hex(4)
         backup_path = self._backup_path(backup_id)
@@ -284,8 +298,9 @@ class RestoreManager:
         with self.gate.maintenance():
             self._sqlite_snapshot(self.database, backup_path)
             self._sqlite_snapshot(candidate, incoming)
+            media_result = self._install_media(staged_media) if staged_media else {"copied": 0, "existing": 0}
             self._inspect_database(incoming, check_media=True)
-            _atomic_json(journal, {"state": "prepared", "backup_id": backup_id, "started_at": _utc_now()})
+            _atomic_json(journal, {"state": "prepared", "backup_id": backup_id, "started_at": _utc_now(), "media": media_result})
             self._checkpoint_live_database()
             os.replace(incoming, self.database)
             _atomic_json(journal, {"state": "switched", "backup_id": backup_id, "started_at": _utc_now()})
@@ -300,10 +315,10 @@ class RestoreManager:
                 raise RestoreError("The restored database failed verification; the previous database was put back")
             _atomic_json(journal, {"state": "verified", "backup_id": backup_id, "finished_at": _utc_now()})
         report = self._inspect_database(self.database, check_media=True)
-        self._audit("committed", backup_id=backup_id, source=source, checksum=source_checksum, counts=report["counts"])
-        return {"ok": True, "backup_id": backup_id, "report": report}
+        self._audit("committed", backup_id=backup_id, source=source, checksum=source_checksum, counts=report["counts"], media=media_result)
+        return {"ok": True, "backup_id": backup_id, "report": report, "media": media_result}
 
-    def _inspect_database(self, path: Path, *, check_media: bool) -> dict:
+    def _inspect_database(self, path: Path, *, check_media: bool, media_root: Path | None = None) -> dict:
         if not path.is_file() or path.stat().st_size < len(SQLITE_HEADER):
             raise RestoreError("The upload is not a complete SQLite database")
         with path.open("rb") as stream:
@@ -339,7 +354,7 @@ class RestoreManager:
                 raise RestoreError("This database uses a newer Life Atlas schema")
             counts = {table: int(con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]) for table in ("events", "people", "places", "trips", "media")}
             if check_media:
-                self._check_media(con)
+                self._check_media(con, media_root or self.data_dir)
             return {
                 "integrity": "ok",
                 "foreign_keys": "ok",
@@ -353,21 +368,141 @@ class RestoreManager:
         finally:
             con.close()
 
-    def _check_media(self, con: sqlite3.Connection) -> None:
+    def _check_media(self, con: sqlite3.Connection, media_root: Path) -> None:
         missing = []
-        for media_id, local_path in con.execute("SELECT id, local_path FROM media WHERE local_path IS NOT NULL AND local_path != ''"):
+        mismatched = []
+        media_root = media_root.resolve()
+        for media_id, local_path, expected_hash in con.execute(
+            "SELECT id, local_path, sha256 FROM media WHERE local_path IS NOT NULL AND local_path != ''"
+        ):
             relative = Path(local_path)
-            target = (self.data_dir / relative).resolve()
+            target = (media_root / relative).resolve()
             try:
-                target.relative_to(self.data_dir)
+                target.relative_to(media_root)
             except ValueError:
                 raise RestoreError(f"Media row {media_id} points outside the Life Atlas data directory") from None
             if relative.is_absolute() or not target.is_file():
                 missing.append(str(media_id))
+            elif expected_hash and _sha256(target) != expected_hash:
+                mismatched.append(str(media_id))
         if missing:
             shown = ", ".join(missing[:10])
             suffix = "…" if len(missing) > 10 else ""
             raise RestoreError(f"Database references {len(missing)} missing media file(s): {shown}{suffix}")
+        if mismatched:
+            raise RestoreError(f"Database references {len(mismatched)} media file(s) with hash mismatches")
+
+    def _stage_upload(self, upload: Path, session_path: Path) -> tuple[Path, Path, dict]:
+        with upload.open("rb") as stream:
+            header = stream.read(len(SQLITE_HEADER))
+        if header == SQLITE_HEADER:
+            return upload, self.data_dir, {"package_kind": "sqlite", "package_media_files": 0, "package_media_bytes": 0}
+        if not header.startswith(ZIP_HEADER):
+            raise RestoreError("Upload must be a standalone SQLite database or Life Atlas restore ZIP")
+        package_root = session_path / "package"
+        if package_root.exists():
+            shutil.rmtree(package_root)
+        package_root.mkdir(mode=0o700)
+        media_names = set()
+        expanded = 0
+        with zipfile.ZipFile(upload) as archive:
+            files = [item for item in archive.infolist() if not item.is_dir()]
+            if not files or len(files) > MAX_PACKAGE_ENTRIES:
+                raise RestoreError("Restore ZIP contains too many entries")
+            names = [item.filename for item in files]
+            if len(names) != len(set(names)):
+                raise RestoreError("Restore ZIP contains duplicate paths")
+            for item in files:
+                name = PurePosixPath(item.filename)
+                parts = name.parts
+                mode = (item.external_attr >> 16) & 0o170000
+                if item.flag_bits & 1:
+                    raise RestoreError("Encrypted restore ZIP entries are not supported")
+                if mode == 0o120000:
+                    raise RestoreError("Restore ZIP must not contain symbolic links")
+                valid_database = parts == ("data", "life_atlas.sqlite3")
+                valid_media = (
+                    len(parts) == 4 and parts[:2] == ("data", "media")
+                    and re.fullmatch(r"[0-9a-f]{2}", parts[2])
+                    and re.fullmatch(r"[0-9a-f]{64}\.webp", parts[3])
+                )
+                if name.as_posix() != item.filename or name.is_absolute() or ".." in parts or not (valid_database or valid_media):
+                    raise RestoreError(f"Restore ZIP contains an unsupported path: {item.filename}")
+                if item.file_size > self.max_upload_bytes:
+                    raise RestoreError("Restore ZIP contains an oversized file")
+                ratio = item.file_size / max(1, item.compress_size)
+                if ratio > MAX_PACKAGE_RATIO:
+                    raise RestoreError("Restore ZIP contains an excessive compression ratio")
+                expanded += item.file_size
+                if expanded > MAX_PACKAGE_EXPANDED_BYTES:
+                    raise RestoreError("Restore ZIP expands beyond the 1 GiB safety limit")
+                if valid_media:
+                    media_names.add(PurePosixPath(*parts[1:]).as_posix())
+            if names.count("data/life_atlas.sqlite3") != 1:
+                raise RestoreError("Restore ZIP must contain exactly data/life_atlas.sqlite3")
+            current_size = self.database.stat().st_size if self.database.exists() else 0
+            if shutil.disk_usage(self.data_dir).free < expanded * 2 + current_size + 32 * 1024 * 1024:
+                raise RestoreError("There is not enough free space to extract, verify and install this restore ZIP")
+            for item in files:
+                target = package_root.joinpath(*PurePosixPath(item.filename).parts)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(item) as source, target.open("xb") as destination:
+                    shutil.copyfileobj(source, destination, length=1024 * 1024)
+                os.chmod(target, 0o600)
+        database = package_root / "data" / "life_atlas.sqlite3"
+        for name in media_names:
+            media_file = package_root / "data" / name
+            if _sha256(media_file) != media_file.stem:
+                raise RestoreError("Restore ZIP contains a media file whose content does not match its content-addressed name")
+        self._verify_package_media_names(database, media_names)
+        return database, package_root / "data", {
+            "package_kind": "zip", "package_media_files": len(media_names),
+            "package_media_bytes": sum((package_root / "data" / name).stat().st_size for name in media_names),
+        }
+
+    def _verify_package_media_names(self, database: Path, media_names: set[str]) -> None:
+        con = _safe_connection(database)
+        try:
+            referenced = {
+                PurePosixPath(row[0]).as_posix()
+                for row in con.execute("SELECT local_path FROM media WHERE local_path IS NOT NULL AND local_path != ''")
+            }
+        finally:
+            con.close()
+        if referenced != media_names:
+            raise RestoreError("Restore ZIP media files do not exactly match the database media references")
+
+    def _install_media(self, staged_media: Path) -> dict:
+        data_root = self.data_dir.resolve()
+        live_media = (data_root / "media").resolve()
+        try:
+            live_media.relative_to(data_root)
+        except ValueError:
+            raise RestoreError("The Life Atlas media directory points outside its data directory") from None
+        copied = 0
+        existing = 0
+        for source in sorted(item for item in staged_media.rglob("*") if item.is_file()):
+            relative = source.relative_to(staged_media)
+            target = (live_media / relative).resolve()
+            try:
+                target.relative_to(live_media)
+            except ValueError:
+                raise RestoreError("A staged media path escapes the Life Atlas media directory") from None
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                if not target.is_file() or _sha256(target) != _sha256(source):
+                    raise RestoreError(f"Existing media conflicts with restore package: {relative.as_posix()}")
+                existing += 1
+                continue
+            temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.restore")
+            shutil.copyfile(source, temporary)
+            os.chmod(temporary, 0o600)
+            if _sha256(temporary) != _sha256(source):
+                temporary.unlink(missing_ok=True)
+                raise RestoreError("A media file failed verification while being installed")
+            os.replace(temporary, target)
+            copied += 1
+        return {"copied": copied, "existing": existing}
 
     def _sqlite_snapshot(self, source: Path, destination: Path) -> None:
         destination.unlink(missing_ok=True)

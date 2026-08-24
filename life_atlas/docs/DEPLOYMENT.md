@@ -32,16 +32,16 @@ After any dependency bump, review the upstream diff, run `python scripts/validat
 
 ## Restore a database through Home Assistant Ingress
 
-1. In the source edition, finish local processing and create one standalone SQLite snapshot with the SQLite backup API or `VACUUM INTO`. Do not use a copied live main file, `-wal`, or `-shm` file.
+1. In the source edition, finish local processing and create either one standalone SQLite snapshot with the SQLite backup API or `VACUUM INTO`, or a Life Atlas ZIP containing `data/life_atlas.sqlite3` plus its exact `data/media` tree. Do not use a copied live main file, `-wal`, or `-shm` file.
 2. Make a Home Assistant backup containing Life Atlas.
 3. Open Life Atlas through Home Assistant, choose **Restore database**, and select the snapshot.
 4. Wait for integrity, foreign-key, schema, version, and matching-media validation. Compare the displayed entity counts with the source.
 5. Type `RESTORE` and confirm. Normal API requests briefly receive a maintenance response while the app drains work, checkpoints the live WAL, retains a rollback snapshot, atomically replaces the database, and verifies the installed copy.
 6. Confirm the expected version and aggregate counts. Restore audit records contain timestamps, checksums, counts, and outcomes—not personal rows or the local source filename.
 
-The upload is database-only. It deliberately preserves `/data/media` and blocks replacement if the candidate refers to missing or unsafe local media paths. Move matching media by a separately reviewed, stopped-app workflow before restoring a database that introduces new media.
+A standalone-database upload deliberately preserves `/data/media` and blocks replacement if the candidate refers to missing or unsafe local media paths. A Life Atlas ZIP may introduce matching media without SSH: the app applies ZIP safety limits, verifies the exact media set and hashes, refuses conflicting existing paths, and atomically adds only missing content-addressed files before switching databases. A failed database switch can therefore leave only harmless unreferenced new media; it never removes or overwrites an existing media file.
 
-Upload sessions expire after 24 hours. The default database limit is 512 MiB and can be changed with `LIFE_ATLAS_MAX_RESTORE_BYTES`; the browser uses 2 MiB chunks and the server accepts no chunk over 4 MiB. Staging requires enough free space for the upload, prepared copy, current database backup, and verification.
+Upload sessions expire after 24 hours. The default upload limit is 512 MiB and can be changed with `LIFE_ATLAS_MAX_RESTORE_BYTES`; ZIP expansion is capped at 1 GiB and a 100:1 compression ratio. The browser uses 2 MiB chunks and the server accepts no chunk over 4 MiB. Staging requires enough free space for the upload, extraction, prepared copy, media installation, current database backup, and verification.
 
 ## Stopped-app SSH fallback
 

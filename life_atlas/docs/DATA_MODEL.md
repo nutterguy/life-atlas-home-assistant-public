@@ -13,6 +13,6 @@ Current databases use SQLite `application_id` `LATL` and `user_version` 1. A leg
 - `entity_links`, `media`, and `weather_cache` are optional enrichments. Photo rows may target an event, a person portrait, or an otherwise unlinked diary date. Files are stored under `/data/media` and referenced by safe paths relative to `/data`.
 - `imports` records checksum-based ingestion history.
 
-Database restore rejects failed `integrity_check` or `foreign_key_check` results, missing required tables/columns, active triggers/views/virtual tables, unsafe media paths, and missing local media files. It never accepts a WAL or SHM file as the database payload.
+Database restore rejects failed `integrity_check` or `foreign_key_check` results, missing required tables/columns, active triggers/views/virtual tables, unsafe media paths, missing local media files, media hash mismatches, and conflicting content-addressed files. A restore ZIP must contain exactly one database plus the media paths referenced by that database. It never accepts a WAL or SHM file as the database payload.
 
 Dates use ISO `YYYY-MM-DD`; single-day events have matching start/end dates. Status is one of `confirmed`, `booked`, `planned`, `cancelled`, `resold`, or `uncertain`. Confidence is finite and between 0 and 1. A booking must not be promoted to confirmed attendance without evidence.
