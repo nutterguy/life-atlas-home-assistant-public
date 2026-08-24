@@ -6,7 +6,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 required = [
-    "AGENTS.md", "README.md", "app.py", "google_photos_picker.py", "media_store.py", "schema.sql", "Dockerfile", "run.sh",
+    "AGENTS.md", "README.md", "app.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "schema.sql", "Dockerfile", "run.sh",
     "config.yaml", "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
     "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/DEPLOYMENT.md",
     "dependencies/google-photos-mcp.json", "scripts/update_google_photos_mcp.py",
@@ -32,9 +32,22 @@ for required_fragment in (
     'export TOKEN_STORAGE_PATH="runtime-data/tokens.db"',
     "chmod 700 \"$MCP_DATA_DIR\"",
     "umask 077",
+    "LIFE_ATLAS_BACKEND_PORT=8100",
+    "python3 /app/mcp_ingress_proxy.py",
 ):
     if required_fragment not in run_script:
-        raise SystemExit(f"Google Photos MCP persistent auth setup missing: {required_fragment}")
+        raise SystemExit(f"Google Photos MCP persistent auth/Ingress setup missing: {required_fragment}")
+
+proxy = (root / "mcp_ingress_proxy.py").read_text(encoding="utf-8")
+for required_fragment in (
+    'route == "/api/google-photos-mcp/status"',
+    'route == "/api/google-photos-mcp/auth"',
+    'route == "/api/google-photos-mcp/auth/callback"',
+):
+    if required_fragment not in proxy:
+        raise SystemExit(f"Google Photos MCP Ingress bridge missing: {required_fragment}")
+if '"/mcp"' in proxy:
+    raise SystemExit("The raw MCP endpoint must not be exposed through Home Assistant Ingress")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
 
