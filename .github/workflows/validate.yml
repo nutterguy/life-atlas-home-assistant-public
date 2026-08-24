@@ -16,3 +16,5 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install Pillow
       - run: python scripts/validate_repository.py
+      - name: Build Home Assistant add-on image
+        run: docker build --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.21 -t life-atlas-ci .

@@ -10,6 +10,24 @@
 
 No fixed host address, local username, SSH key, Ingress token, or workstation path is part of the repository.
 
+## Google Photos MCP dependency updates
+
+The bundled Google Photos MCP is tracked in `dependencies/google-photos-mcp.json` and must be pinned to a full upstream commit SHA. The Docker build reads that file directly, so there is only one version pin to maintain.
+
+To check out the latest upstream `main` commit into the dependency file:
+
+```bash
+python scripts/update_google_photos_mcp.py
+```
+
+To pin a specific upstream branch, tag, or commit instead:
+
+```bash
+python scripts/update_google_photos_mcp.py <ref>
+```
+
+After any dependency bump, review the upstream diff, run `python scripts/validate_repository.py`, and allow the GitHub validation workflow to complete. CI builds the complete Home Assistant add-on image, including the pinned MCP, so dependency or native-module build failures are caught before merge. Do not point the Docker build directly at a moving branch such as `main`.
+
 ## Deploy a database snapshot and media
 
 1. Validate the source snapshot with `PRAGMA integrity_check` and `PRAGMA foreign_key_check`.

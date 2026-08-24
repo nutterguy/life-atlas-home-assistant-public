@@ -15,4 +15,7 @@ panel_title: "Life Atlas"
 homeassistant_api: false
 host_network: false
 options: {}
-schema: {}
+schema:
+  google_photos_mcp_client_id: "str?"
+  google_photos_mcp_client_secret: "password?"
+  google_photos_mcp_redirect_uri: "url?"
