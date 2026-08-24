@@ -15,8 +15,18 @@ if missing:
     raise SystemExit(f"Missing required files: {missing}")
 
 config = (root / "config.yaml").read_text(encoding="utf-8")
-if not re.search(r'^version:\s*"\d+\.\d+\.\d+"', config, re.MULTILINE):
+config_version = re.search(r'^version:\s*"(\d+\.\d+\.\d+)"', config, re.MULTILINE)
+if not config_version:
     raise SystemExit("config.yaml has no semantic version")
+run_script = (root / "run.sh").read_text(encoding="utf-8")
+runtime_version = re.search(r'^export LIFE_ATLAS_VERSION=(\d+\.\d+\.\d+)$', run_script, re.MULTILINE)
+if not runtime_version:
+    raise SystemExit("run.sh has no LIFE_ATLAS_VERSION")
+if runtime_version.group(1) != config_version.group(1):
+    raise SystemExit(
+        f"Version mismatch: config.yaml={config_version.group(1)}, "
+        f"run.sh={runtime_version.group(1)}"
+    )
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
 git_root = subprocess.run(
