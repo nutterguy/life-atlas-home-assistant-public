@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import app
+from importance import infer_importance
 
 
 def ingest(path):
@@ -32,7 +33,7 @@ def ingest(path):
             cur = con.execute("""INSERT INTO events(title,start_date,end_date,description,category,status,confidence,importance,
               review_state,notable_score,date_precision,memory) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
                 event["title"], event["start_date"], event.get("end_date"), event.get("description", ""),
-                event.get("category", "Life"), status, float(event.get("confidence", .5)), event.get("importance", "medium"),
+                event.get("category", "Life"), status, float(event.get("confidence", .5)), infer_importance(event),
                 "needs_review" if status == "uncertain" else "clear", float(event.get("notable_score", .5)),
                 event.get("date_precision", "day"), event.get("memory", "")))
             event_id = cur.lastrowid

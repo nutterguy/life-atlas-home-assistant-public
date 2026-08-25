@@ -17,3 +17,9 @@ The preferred workflow is to curate data in the private Windows repository, vali
 A standalone database replaces records only and must match existing media. A guarded Life Atlas ZIP can carry new matching media through the same Ingress screen; ZIP structure, expansion, reference coverage, content hashes, and existing-path conflicts all fail closed before database replacement.
 
 Never commit the personal database to this repository, embed it in a permanent container image, or expose private rows in logs. Temporary transfer artifacts must be removed after a verified deployment.
+
+## Exercise importance
+
+When a curated event supplies `importance`, that explicit value always wins. If importance is omitted, routine `Exercise` and `Running` events default to `minor`; events with explicit race metadata or conservative race, parkrun, or marathon wording default to `medium`. Other event categories continue to default to `medium`.
+
+Historical data is never silently rewritten. `scripts/promote_race_importance.py` previews minor exercise records that look like races in a consistent source snapshot. Applying a promotion requires reviewed event IDs and a new backup path. Run it against the private source snapshot, validate there, and then follow the normal guarded restore workflow.

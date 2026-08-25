@@ -57,6 +57,15 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("width:24px!important", self.css)
         self.assertIn(".swim-event.point:focus-visible span", self.css)
 
+    def test_timeline_defaults_to_highlights_and_can_restore_minor_events(self):
+        self.assertIn("timelineMode='highlights'", self.script)
+        self.assertIn("importance!=='minor'", self.script)
+        self.assertIn("Timeline importance", self.script)
+        self.assertIn(">Highlights</button>", self.script)
+        self.assertIn(">Major only</button>", self.script)
+        self.assertIn(">All events</button>", self.script)
+        self.assertIn("minor hidden", self.script)
+
     def test_google_picker_tokens_remain_in_browser_memory(self):
         self.assertIn("browser's memory", self.photos)
         self.assertIn("window.isSecureContext", self.photos)
