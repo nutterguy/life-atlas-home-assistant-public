@@ -1,5 +1,19 @@
 # Home Assistant deployment and recovery
 
+## Fast release path
+
+Routine releases should use the compact path below. The goal is to avoid re-reading full repository history, successful CI logs, or Home Assistant logs when the deployment is healthy.
+
+1. Inspect only `git status --short` and `git diff --name-only`, then review the focused changed-file diff.
+2. Run `python scripts/deploy.py`. To bump the release version at the same time, run `python scripts/deploy.py --set-version <version>`.
+3. A healthy preflight prints one line beginning `LIFE_ATLAS_DEPLOY=` with `version_sync:true`, `validation:"pass"`, and `release_ready:true`. Use `--verbose` only if that compact result reports a failure.
+4. Merge/push the focused change to private `main`. The publish workflow emits `LIFE_ATLAS_PUBLISH={...}` and synchronizes the allowlisted application snapshot to the public distribution repository.
+5. The public image workflow emits `LIFE_ATLAS_IMAGE={...}`. Check job status or that compact summary first; fetch verbose logs only for a failed job.
+6. In Home Assistant, create a backup and install the offered Life Atlas add-on update.
+7. Confirm the add-on is started and request `/api/health` through Home Assistant Ingress. The deployment is complete when health is `ok` and the reported version matches the release. Check recent add-on logs only if this verification fails.
+
+The repository and image publication steps are automated. Updating the running Home Assistant installation intentionally remains an explicit final action.
+
 ## Install from the Home Assistant app repository
 
 1. In Home Assistant, open Settings > Apps > App store > Repositories.
@@ -57,15 +71,10 @@ Open **Restore database** and select an automatic rollback copy, or restore the 
 ## Release discipline
 
 1. Make and validate changes only in the private canonical repository.
-2. Bump `config.yaml` and the `LIFE_ATLAS_VERSION` value in `run.sh` together.
-3. Merge to `main`. The publish workflow validates the private tree, copies only
-   files in `.public-files`, validates that clean snapshot, and pushes it to the
-   public distribution repository.
-4. The public workflow validates the snapshot and publishes the versioned
-   `ghcr.io/nutterguy/life-atlas-home-assistant` image.
+2. Bump `config.yaml` and the `LIFE_ATLAS_VERSION` value in `run.sh` together. `scripts/deploy.py --set-version <version>` performs that edit and validates the result.
+3. Merge to `main`. The publish workflow validates the private tree, copies only files in `.public-files`, validates that clean snapshot, and pushes it to the public distribution repository.
+4. The public workflow validates the snapshot and publishes the versioned `ghcr.io/nutterguy/life-atlas-home-assistant` image.
 5. In Home Assistant, check for app updates, create a partial backup, and apply the update.
-6. Open the app and verify `/api/health` reports `status: ok` and the expected
-   version. Check logs and aggregate counts without logging personal event content.
+6. Open the app and verify `/api/health` reports `status: ok` and the expected version. Check logs and aggregate counts without logging personal event content.
 
-If validation or image building fails, no installable version is published. Keep
-runtime data outside Git and the image.
+If validation or image building fails, no installable version is published. Keep runtime data outside Git and the image.
