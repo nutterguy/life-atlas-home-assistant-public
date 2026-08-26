@@ -89,3 +89,35 @@ jobs:
             ${{ needs.prepare.outputs.version }}
             latest
           registry-prefix: ghcr.io/nutterguy
+
+  result:
+    needs: [prepare, validate, build, manifest]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compact image result
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PREPARE: ${{ needs.prepare.result }}
+          VALIDATE: ${{ needs.validate.result }}
+          BUILD: ${{ needs.build.result }}
+          MANIFEST: ${{ needs.manifest.result }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          PUBLISH="$MANIFEST"
+          if [ "$EVENT" = "pull_request" ] && [ "$MANIFEST" = "skipped" ]; then
+            PUBLISH="not_requested"
+          fi
+          VERSION=${VERSION:-unknown}
+          printf 'LIFE_ATLAS_IMAGE={"version":"%s","prepare":"%s","validate":"%s","build":"%s","publish":"%s","sha":"%s"}\n' "$VERSION" "$PREPARE" "$VALIDATE" "$BUILD" "$PUBLISH" "$GITHUB_SHA"
+          {
+            echo '### Life Atlas image result'
+            echo
+            printf '`LIFE_ATLAS_IMAGE={"version":"%s","prepare":"%s","validate":"%s","build":"%s","publish":"%s","sha":"%s"}`\n' "$VERSION" "$PREPARE" "$VALIDATE" "$BUILD" "$PUBLISH" "$GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$PREPARE" = "success"
+          test "$VALIDATE" = "success"
+          test "$BUILD" = "success"
+          if [ "$EVENT" != "pull_request" ]; then
+            test "$MANIFEST" = "success"
+          fi
