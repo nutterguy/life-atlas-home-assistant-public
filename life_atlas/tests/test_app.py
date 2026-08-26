@@ -216,6 +216,7 @@ class LifeAtlasTests(unittest.TestCase):
                 self.assertEqual(json.load(response), {"status": "ok"})
             with urllib.request.urlopen(base + "/") as response:
                 html = response.read().decode()
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
             self.assertIn('src="app.js?', html)
             self.assertNotIn('src="/app.js"', html)
         finally:

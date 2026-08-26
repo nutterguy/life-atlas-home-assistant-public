@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,14 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("input.startsWith('/api/')?input.slice(1):input", self.script)
         self.assertNotIn('src="/app.js', self.html)
         self.assertNotIn('href="/style.css', self.html)
+
+    def test_first_party_assets_are_keyed_to_the_release_version(self):
+        version = re.search(r'^version: "([^"]+)"$', self.config, re.MULTILINE).group(1)
+        assets = re.findall(r'(?:href|src)="([^"]+\.(?:css|js)(?:\?[^"]*)?)"', self.html)
+        first_party_assets = [asset for asset in assets if "://" not in asset]
+        self.assertTrue(first_party_assets)
+        for asset in first_party_assets:
+            self.assertTrue(asset.endswith(f"?v={version}"), asset)
 
     def test_every_primary_view_is_registered(self):
         for view in ("home", "timeline", "diary", "years", "map", "people", "trips", "review", "stats"):

@@ -560,6 +560,11 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def end_headers(self):
+        if urlparse(self.path).path in ("/", "/index.html"):
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def send_json(self, value, status=200):
         body = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8")
