@@ -198,8 +198,31 @@ class AgentAPITests(unittest.TestCase):
 
     def test_health_advertises_the_new_capabilities(self):
         _, payload = self.request("/v1/health")
-        for capability in ("filter_events_by_date", "paginate_events", "create_event_evidence"):
+        for capability in ("filter_events_by_date", "paginate_events", "create_event_evidence",
+                           "search_whatsapp_evidence", "promote_whatsapp_evidence"):
             self.assertIn(capability, payload["capabilities"])
+
+    def test_whatsapp_search_and_promotion_are_available_to_agents(self):
+        original_search = app.whatsapp_search
+        original_promote = app.promote_whatsapp_event
+        app.whatsapp_search = lambda query, limit, cursor: {
+            "items": [{"source_id": "wa-1", "text": "Booked"}], "next_cursor": None
+        }
+        app.promote_whatsapp_event = lambda payload, key: (77, False)
+        try:
+            status, found = self.request("/v1/whatsapp/messages?q=Booked&limit=5")
+            self.assertEqual(status, 200)
+            self.assertEqual(found["items"][0]["source_id"], "wa-1")
+            status, created = self.request(
+                "/v1/whatsapp/events", method="POST",
+                payload={"source_ids": ["wa-1"], "title": "Dinner", "start_date": "2026-09-13"},
+                idempotency_key="whatsapp-agent-0001",
+            )
+            self.assertEqual(status, 201)
+            self.assertEqual(created["id"], 77)
+        finally:
+            app.whatsapp_search = original_search
+            app.promote_whatsapp_event = original_promote
 
     def test_oversized_identifiers_are_rejected_not_crashed(self):
         """SQLite cannot bind a bignum; that must surface as 400, not a dropped connection."""

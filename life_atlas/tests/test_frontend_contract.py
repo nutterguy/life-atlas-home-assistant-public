@@ -38,6 +38,14 @@ class FrontendContractTests(unittest.TestCase):
         for view in ("home", "timeline", "diary", "years", "map", "people", "trips", "review", "stats"):
             self.assertIn(f"{view}:", self.script)
 
+    def test_whatsapp_evidence_flow_is_explicit_and_reviewed(self):
+        self.assertIn('id="whatsapp-evidence"', self.html)
+        self.assertIn("function whatsappEvidence()", self.script)
+        self.assertIn("/api/whatsapp/search", self.script)
+        self.assertIn("/api/whatsapp/promote", self.script)
+        self.assertIn("window.confirm", self.script)
+        self.assertIn("at most 20 messages", self.script)
+
     def test_navigation_clicks_are_bound_to_buttons(self):
         self.assertIn("button[data-view]", self.script)
         self.assertIn("onclick=\"view='${id}';render()\"", self.script)

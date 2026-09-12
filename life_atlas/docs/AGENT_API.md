@@ -6,7 +6,7 @@ It is deliberately separate from the Ingress interface. Home Assistant Ingress a
 
 ## Status and scope
 
-The agent API is a work in progress. It currently supports four operations: search and filter events, read one event in full, search people, and create one event with its evidence. It cannot edit or delete records, manage media, or run a restore. Anything not listed under **Endpoints** is not available.
+The agent API supports event and people retrieval, reviewed event creation, and bounded WhatsApp evidence search/promotion. It cannot edit or delete records, manage media, send WhatsApp messages, or run a restore. Anything not listed under **Endpoints** is not available.
 
 `GET /v1/health` returns a `capabilities` list. Read it rather than assuming what this build supports.
 
@@ -66,12 +66,13 @@ Liveness plus a cheap integrity check. Safe to poll.
 ```json
 {
   "status": "ok",
-  "version": "0.14.4",
+  "version": "0.15.0",
   "schema_version": 2,
   "database": "ok",
   "counts": {"events": 6, "people": 1, "places": 5, "trips": 1},
   "capabilities": ["search_events", "filter_events_by_date", "paginate_events", "get_event",
-                   "search_people", "create_event", "create_event_evidence"]
+                   "search_people", "create_event", "create_event_evidence",
+                   "search_whatsapp_evidence", "promote_whatsapp_evidence"]
 }
 ```
 
@@ -118,6 +119,14 @@ The full detail record for one event: the event itself, its evidence with source
 Searches person names and aliases. Returns each person with their aliases, event count, and first and latest event dates. Ordered by event count descending.
 
 This endpoint takes `limit` but not `cursor`. The people table is small enough that a single page is sufficient; only events are paginated.
+
+### `GET /v1/whatsapp/messages?q=<text>&limit=<n>&cursor=<cursor>`
+
+Searches only the selected durable WhatsApp archive through the private read-only connector. `q` is required, `limit` is clamped to 1–100, and `cursor` is the opaque cursor from the prior page. Search results contain message text and provenance but are not copied into the canonical Life Atlas database merely because they were viewed.
+
+### `POST /v1/whatsapp/events`
+
+Creates one reviewed event and promotes 1–20 selected WhatsApp messages as its evidence. The request uses the same event fields and `Idempotency-Key` rules as `POST /v1/events`, with an additional `source_ids` list taken from WhatsApp search results. Life Atlas re-fetches every message server-side, rejects unavailable or already-promoted items, stores bounded immutable excerpts, and records stable source IDs and content hashes. The default and recommended status is `uncertain` unless the evidence establishes attendance.
 
 ### `POST /v1/events`
 

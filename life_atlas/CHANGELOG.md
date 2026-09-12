@@ -3,6 +3,12 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.15.0
+
+- Added a five-stage WhatsApp evidence workflow inside Life Atlas: search the durable archive, select messages, draft and review an event, then explicitly create it with immutable evidence excerpts.
+- Kept archive searches non-durable until promotion, re-fetched selected messages server-side, limited each event to 20 messages, and preserved stable source IDs and content hashes for replay protection.
+- Defaulted WhatsApp-derived events to uncertain review rather than treating message text as proof of attendance.
+
 ## 0.14.4
 
 - Prevented demonstration chapters from being inserted into existing timelines that have no chapters.

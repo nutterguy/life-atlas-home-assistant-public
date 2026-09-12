@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import app
+from connectors import ConnectorError
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("LIFE_ATLAS_AGENT_PORT", "8096"))
@@ -237,7 +238,8 @@ class Handler(BaseHTTPRequestHandler):
                     "version": os.environ.get("LIFE_ATLAS_VERSION", "development"),
                     "schema_version": schema_version, "database": integrity, "counts": counts,
                     "capabilities": ["search_events", "filter_events_by_date", "paginate_events",
-                                     "get_event", "search_people", "create_event", "create_event_evidence"]})
+                                     "get_event", "search_people", "create_event", "create_event_evidence",
+                                     "search_whatsapp_evidence", "promote_whatsapp_evidence"]})
             params = parse_qs(parsed.query)
             if parsed.path == "/v1/people":
                 query = params.get("q", [""])[0]
@@ -253,16 +255,22 @@ class Handler(BaseHTTPRequestHandler):
                 items, next_cursor = _event_rows(query, limit, date_from=date_from, date_to=date_to,
                                                  cursor=params.get("cursor", [""])[0] or None)
                 return self._send(200, {"items": items, "next_cursor": next_cursor})
+            if parsed.path == "/v1/whatsapp/messages":
+                query = params.get("q", [""])[0]
+                limit = min(MAX_LIMIT, max(1, int(params.get("limit", ["20"])[0])))
+                return self._send(200, app.whatsapp_search(
+                    query, limit=limit, cursor=params.get("cursor", [""])[0] or None
+                ))
             if parsed.path.startswith("/v1/events/"):
                 return self._send(200, app.entity_detail("event", int(parsed.path.rsplit("/", 1)[1])))
             return self._send(404, {"error": {"code": "not_found", "message": "Unknown endpoint"}})
-        except (ValueError, TypeError, OverflowError) as exc:
+        except (ValueError, TypeError, OverflowError, ConnectorError, OSError) as exc:
             return self._send(400, {"error": {"code": "bad_request", "message": str(exc)}})
 
     def do_POST(self) -> None:
         if not self._require_auth():
             return
-        if self.path != "/v1/events":
+        if self.path not in {"/v1/events", "/v1/whatsapp/events"}:
             return self._send(404, {"error": {"code": "not_found", "message": "Unknown endpoint"}})
         try:
             size = int(self.headers.get("Content-Length", "0"))
@@ -274,9 +282,12 @@ class Handler(BaseHTTPRequestHandler):
             key = self.headers.get("Idempotency-Key", "").strip()
             if len(key) < 16 or len(key) > 128:
                 raise ValueError("Idempotency-Key must contain 16 to 128 characters")
-            event_id, replayed = create_event(payload, key)
+            if self.path == "/v1/whatsapp/events":
+                event_id, replayed = app.promote_whatsapp_event(payload, key)
+            else:
+                event_id, replayed = create_event(payload, key)
             return self._send(200 if replayed else 201, {"id": event_id, "replayed": replayed})
-        except (ValueError, TypeError, OverflowError, json.JSONDecodeError) as exc:
+        except (ValueError, TypeError, OverflowError, ConnectorError, OSError, json.JSONDecodeError) as exc:
             return self._send(400, {"error": {"code": "bad_request", "message": str(exc)}})
 
     def log_message(self, format: str, *args: object) -> None:

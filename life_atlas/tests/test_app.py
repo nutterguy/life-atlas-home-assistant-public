@@ -12,6 +12,7 @@ from contextlib import closing
 from pathlib import Path
 
 from PIL import Image
+from connectors import SearchPage, SourceIdentity, SourceItem
 
 
 class LifeAtlasTests(unittest.TestCase):
@@ -60,6 +61,59 @@ class LifeAtlasTests(unittest.TestCase):
         detail = self.app.entity_detail("event", event_id)
         self.assertEqual(detail["item"]["title"], "A remembered day")
         self.assertEqual(detail["item"]["end_date"], "2026-08-21")
+
+    def test_whatsapp_search_and_reviewed_promotion_create_durable_evidence(self):
+        item = SourceItem(
+            source_id="wa-message-1", native_id="native-1", item_type="message",
+            timestamp="2026-09-13T09:15:00Z", text="The table is booked for Friday",
+            content_hash="a" * 64,
+            participants=(SourceIdentity(source_id="contact-1", kind="contact", label="Alex"),),
+            metadata={"conversation_id": "chat-1", "conversation_name": "Alex"},
+        )
+
+        class Client:
+            def search(self, query, *, cursor=None, limit=50):
+                return SearchPage(items=(item,), next_cursor=None)
+
+            def item(self, source_id):
+                return item
+
+        self.app.make_whatsapp_client = lambda: Client()
+        result = self.app.whatsapp_search("booked")
+        self.assertEqual(result["items"][0]["source_id"], "wa-message-1")
+        event_id, replayed = self.app.promote_whatsapp_event({
+            "source_ids": ["wa-message-1"], "title": "Dinner with Alex",
+            "start_date": "2026-09-18", "status": "uncertain", "confidence": 0.6,
+        })
+        self.assertFalse(replayed)
+        detail = self.app.entity_detail("event", event_id)
+        self.assertEqual(detail["evidence"][0]["excerpt"], "The table is booked for Friday")
+        self.assertEqual(detail["evidence"][0]["source_name"], "WhatsApp")
+        self.assertEqual(detail["item"]["review_state"], "needs_review")
+        with closing(self.app.connect()) as connection:
+            record = connection.execute("SELECT * FROM source_records WHERE external_id='wa-message-1'").fetchone()
+            self.assertEqual(record["content_sha256"], "a" * 64)
+            self.assertEqual(record["observed_date"], "2026-09-13")
+        with self.assertRaisesRegex(ValueError, "already evidence"):
+            self.app.promote_whatsapp_event({
+                "source_ids": ["wa-message-1"], "title": "Duplicate",
+                "start_date": "2026-09-18", "status": "uncertain",
+            })
+
+        second_item = SourceItem(
+            source_id="wa-message-2", native_id="native-2", item_type="message",
+            timestamp="2026-09-13T10:15:00Z", text="Maybe we should go on Friday",
+            content_hash="b" * 64,
+        )
+        Client.item = lambda self, source_id: second_item
+        event_id, _ = self.app.promote_whatsapp_event({
+            "source_ids": ["wa-message-2"], "title": "Possible Friday plan",
+            "start_date": "2026-09-18",
+        })
+        detail = self.app.entity_detail("event", event_id)
+        self.assertEqual(detail["item"]["status"], "uncertain")
+        self.assertEqual(detail["item"]["confidence"], 0.6)
+        self.assertEqual(detail["item"]["review_state"], "needs_review")
 
     def test_seeded_timeline_has_valid_date_ranges(self):
         connection = self.app.connect()

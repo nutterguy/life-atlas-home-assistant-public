@@ -34,4 +34,12 @@ Historical coverage means the history WhatsApp supplies to a newly linked device
 
 ## Relationship to Life Atlas events
 
-Messages are source evidence, not timeline events. This release establishes the local archive, chat selection, ongoing synchronization, source-neutral search, and incremental change feed. Turning messages into canonical events remains a separate reviewed process so raw conversations are not copied into event descriptions or accepted automatically.
+Messages are source evidence, not timeline events. **WhatsApp evidence** in the Life Atlas sidebar provides the reviewed promotion flow:
+
+1. search the selected durable archive;
+2. choose up to 20 messages that support one event;
+3. draft the canonical event separately from the raw conversation;
+4. review its dates, attendance state, confidence, importance and people;
+5. explicitly create the event and immutable evidence excerpts.
+
+Search results remain connector-owned until the final confirmation. Promotion re-fetches every selected message through the private connector boundary, stores stable source IDs and content hashes, and copies bounded text excerpts into canonical evidence. An unavailable or previously promoted message fails closed. Events default to `uncertain` and enter the Detective queue; message timestamps are evidence dates and are not assumed to be event dates.

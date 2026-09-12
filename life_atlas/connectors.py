@@ -209,6 +209,16 @@ class ConnectorClient:
             raise ConnectorProtocolError("next_cursor must be a string or null")
         return SearchPage(items=items, next_cursor=next_cursor)
 
+    def item(self, source_id: str) -> SourceItem:
+        if not isinstance(source_id, str) or not source_id.strip() or len(source_id) > 512:
+            raise ValueError("source_id is invalid")
+        self.capabilities().require("item_retrieval")
+        payload = self._request("item", {"source_id": source_id})
+        raw_item = payload.get("item")
+        if not isinstance(raw_item, Mapping):
+            raise ConnectorProtocolError("Item response must contain an item object")
+        return _parse_source_item(raw_item)
+
     def iter_search(self, query: str, *, limit: int = 50, max_pages: int | None = None):
         cursor: str | None = None
         pages = 0

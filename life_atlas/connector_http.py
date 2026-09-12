@@ -21,6 +21,7 @@ _OPERATION_ROUTES = {
     "status": ("GET", f"{PROTOCOL_PREFIX}/status"),
     "capabilities": ("GET", f"{PROTOCOL_PREFIX}/capabilities"),
     "search": ("POST", f"{PROTOCOL_PREFIX}/search"),
+    "item": ("POST", f"{PROTOCOL_PREFIX}/item"),
 }
 
 

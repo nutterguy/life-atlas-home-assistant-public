@@ -204,6 +204,15 @@ class ConnectorModelTests(unittest.TestCase):
         with self.assertRaises(ConnectorProtocolError):
             client.search("test")
 
+    def test_item_retrieval_is_capability_gated_and_parsed(self):
+        client, transport = client_with({
+            "capabilities": {"capabilities": ["item_retrieval"]},
+            "item": {"item": {"source_id": "message:1", "item_type": "message", "text": "Evidence"}},
+        })
+        item = client.item("message:1")
+        self.assertEqual(item.text, "Evidence")
+        self.assertIn(("item", {"source_id": "message:1"}), transport.calls)
+
     def test_iter_search_handles_pagination(self):
         pages = [
             {

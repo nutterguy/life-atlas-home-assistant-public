@@ -109,6 +109,22 @@ Response:
 
 `items` is a list of SourceItem objects. `next_cursor` is either a string or `null`. Repeating a cursor is a protocol error because it can create infinite pagination loops.
 
+### `POST /v1/item`
+
+Connectors advertising `item_retrieval` accept a stable connector-scoped source ID:
+
+```json
+{"source_id": "message-001"}
+```
+
+The response contains the current source-neutral item envelope:
+
+```json
+{"item": {"source_id": "message-001", "item_type": "message"}}
+```
+
+Life Atlas uses this operation to re-fetch selected evidence immediately before promotion. A search result alone is never trusted as the durable promoted snapshot.
+
 ## SourceItem v1
 
 A source item is a source-neutral envelope. Fields not meaningful for a source may be `null` or omitted where the Life Atlas parser permits it.

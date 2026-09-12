@@ -28,6 +28,8 @@ from google_photos_picker import (configure_web as configure_google_photos,
                                   disconnect_web as disconnect_google_photos,
                                   poll_session as poll_picker_session,
                                   web_status as google_photos_status)
+from connector_runtime import make_whatsapp_client
+from connectors import ConnectorError
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -482,6 +484,129 @@ def save_event(payload):
         return cur.lastrowid
 
 
+def whatsapp_search(query, *, limit=50, cursor=None):
+    query = str(query or "").strip()
+    if not query:
+        raise ValueError("Enter words to search for in the WhatsApp archive")
+    limit = max(1, min(int(limit), 100))
+    page = make_whatsapp_client().search(query, cursor=cursor, limit=limit)
+    return {
+        "items": [
+            {
+                "source_id": item.source_id,
+                "timestamp": item.timestamp,
+                "lifecycle": item.lifecycle.value,
+                "text": item.text,
+                "participants": [
+                    {"source_id": person.source_id, "kind": person.kind, "label": person.label}
+                    for person in item.participants
+                ],
+                "content_hash": item.content_hash,
+                "metadata": dict(item.metadata),
+            }
+            for item in page.items
+        ],
+        "next_cursor": page.next_cursor,
+    }
+
+
+def promote_whatsapp_event(payload, idempotency_key=None):
+    request_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    event_payload = dict(payload)
+    event_payload.setdefault("status", "uncertain")
+    event_payload.setdefault("confidence", 0.6)
+    if idempotency_key:
+        with closing(connect()) as con:
+            prior = con.execute(
+                "SELECT target_id,request_sha256 FROM agent_mutations WHERE idempotency_key=?",
+                (idempotency_key,),
+            ).fetchone()
+        if prior:
+            if prior["request_sha256"] != request_hash:
+                raise ValueError("Idempotency key was already used for a different request")
+            return int(prior["target_id"]), True
+    raw_ids = payload.get("source_ids")
+    if not isinstance(raw_ids, list):
+        raise ValueError("source_ids must be a list")
+    source_ids = list(dict.fromkeys(str(value).strip() for value in raw_ids if str(value).strip()))
+    if not 1 <= len(source_ids) <= 20:
+        raise ValueError("Select between 1 and 20 WhatsApp messages")
+    title, start_date, end_date, status, importance, confidence = validate_event_values(event_payload)
+    client = make_whatsapp_client()
+    items = [client.item(source_id) for source_id in source_ids]
+    for item in items:
+        if item.lifecycle.value in {"deleted", "unavailable"} or not (item.text or "").strip():
+            raise ValueError("A selected WhatsApp message is no longer available for promotion")
+    with closing(connect()) as con, con:
+        if idempotency_key:
+            prior = con.execute(
+                "SELECT target_id,request_sha256 FROM agent_mutations WHERE idempotency_key=?",
+                (idempotency_key,),
+            ).fetchone()
+            if prior:
+                if prior["request_sha256"] != request_hash:
+                    raise ValueError("Idempotency key was already used for a different request")
+                return int(prior["target_id"]), True
+        source = con.execute("SELECT id FROM sources WHERE name='WhatsApp'").fetchone()
+        source_id = source[0] if source else con.execute(
+            "INSERT INTO sources(name,source_type,notes) VALUES('WhatsApp','chat','Selected evidence promoted from the local read-only WhatsApp archive')"
+        ).lastrowid
+        existing = con.execute(
+            f"""SELECT sr.external_id,e.title FROM source_records sr
+            JOIN event_source_records esr ON esr.source_record_id=sr.id
+            JOIN events e ON e.id=esr.event_id
+            WHERE sr.source_id=? AND sr.object_type='message'
+            AND sr.external_id IN ({','.join('?' for _ in source_ids)})""",
+            (source_id, *source_ids),
+        ).fetchone()
+        if existing:
+            raise ValueError(f"A selected message is already evidence for ‘{existing['title']}’")
+        event_id = con.execute(
+            """INSERT INTO events(title,start_date,end_date,description,category,status,confidence,importance,place_id,trip_id,review_state)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (title, start_date, end_date, payload.get("description", ""), payload.get("category", "Life"),
+             status, confidence, importance,
+             int(payload["place_id"]) if payload.get("place_id") else None,
+             int(payload["trip_id"]) if payload.get("trip_id") else None,
+             "needs_review" if status == "uncertain" else "clear"),
+        ).lastrowid
+        person_ids = {int(value) for value in payload.get("person_ids", [])}
+        con.executemany("INSERT INTO event_people(event_id,person_id,role) VALUES(?,?,'with')",
+                       [(event_id, person_id) for person_id in person_ids])
+        for item in items:
+            text = (item.text or "").strip()
+            digest = item.content_hash or hashlib.sha256(text.encode("utf-8")).hexdigest()
+            observed_date = item.timestamp[:10] if item.timestamp else None
+            source_ref = f"whatsapp:{item.source_id}"
+            record_id = con.execute(
+                """INSERT INTO source_records(source_id,object_type,external_id,content_sha256,source_ref,observed_date)
+                VALUES(?,?,?,?,?,?)""",
+                (source_id, "message", item.source_id, digest, source_ref, observed_date),
+            ).lastrowid
+            con.execute(
+                """INSERT INTO evidence(event_id,source_id,evidence_type,source_ref,observed_date,excerpt,confidence)
+                VALUES(?,?,?,?,?,?,?)""",
+                (event_id, source_id, "message", source_ref, observed_date, text[:4000], confidence),
+            )
+            con.execute(
+                "INSERT INTO event_source_records(event_id,source_record_id,relationship) VALUES(?,?,'evidence')",
+                (event_id, record_id),
+            )
+        if status == "uncertain":
+            con.execute(
+                "INSERT INTO review_items(event_id,issue_type,summary,details) VALUES(?,?,?,?)",
+                (event_id, "uncertain_event", f"Review: {title}",
+                 f"Proposed from {len(items)} selected WhatsApp message(s); confirm the event and attendance."),
+            )
+        if idempotency_key:
+            con.execute(
+                """INSERT INTO agent_mutations(idempotency_key,operation,target_type,target_id,request_sha256)
+                VALUES(?,?,?,?,?)""",
+                (idempotency_key, "promote_whatsapp", "event", event_id, request_hash),
+            )
+        return event_id, False
+
+
 def update_event(event_id, payload):
     title, start_date, end_date, status, importance, confidence = validate_event_values(payload)
     person_ids = {int(value) for value in payload.get("person_ids", [])}
@@ -661,6 +786,16 @@ class Handler(SimpleHTTPRequestHandler):
             path, content_type = media_file(connect, DATA, int(route.rsplit("/", 1)[1]))
             return self.send_media(path, content_type)
         if route == "/api/google-photos/status": return self.send_json(google_photos_status(DATA))
+        if route == "/api/whatsapp/search":
+            params = parse_qs(parsed.query)
+            try:
+                return self.send_json(whatsapp_search(
+                    params.get("q", [""])[0],
+                    limit=params.get("limit", ["50"])[0],
+                    cursor=params.get("cursor", [None])[0],
+                ))
+            except (ValueError, ConnectorError, OSError) as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if route.startswith("/api/google-photos/picker/"):
             try:
                 return self.send_json(poll_picker_session(DATA, connect, route.rsplit("/", 1)[1]))
@@ -699,6 +834,9 @@ class Handler(SimpleHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(size) or b"{}")
                 if route == "/api/events":
                     return self.send_json({"id": save_event(payload)}, 201)
+                if route == "/api/whatsapp/promote":
+                    event_id, _ = promote_whatsapp_event(payload)
+                    return self.send_json({"id": event_id}, 201)
                 if route.startswith("/api/events/"):
                     return self.send_json({"id": update_event(int(route.rsplit("/", 1)[1]), payload)})
                 if route.startswith("/api/people/") and route.endswith("/merge"):
