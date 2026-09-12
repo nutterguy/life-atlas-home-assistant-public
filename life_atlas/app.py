@@ -66,10 +66,11 @@ def initialise():
             raise ValueError("Database was created by a newer Life Atlas version")
         con.executescript((RESOURCE_ROOT / "schema.sql").read_text(encoding="utf-8"))
         migrate(con)
-        if seed_sample and con.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0:
+        database_is_empty = con.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+        if seed_sample and database_is_empty:
             seed(con)
-        if seed_sample and con.execute("SELECT COUNT(*) FROM chapters").fetchone()[0] == 0:
-            seed_chapters(con)
+            if con.execute("SELECT COUNT(*) FROM chapters").fetchone()[0] == 0:
+                seed_chapters(con)
 
 
 def migrate(con):

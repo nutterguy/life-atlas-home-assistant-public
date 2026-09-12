@@ -3,6 +3,11 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.14.4
+
+- Prevented demonstration chapters from being inserted into existing timelines that have no chapters.
+- Corrected the documented agent API key variable and removed a stale build-file reference.
+
 ## 0.14.3
 
 - Replaced the first-run sample timeline with fully synthetic records. The sample data now lives in `sample-seed.json` rather than being embedded in the application, so it is easy to inspect and replace.

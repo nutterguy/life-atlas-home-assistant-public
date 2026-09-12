@@ -33,6 +33,21 @@ class LifeAtlasTests(unittest.TestCase):
         self.assertEqual(snapshot["people"], [])
         self.assertEqual(snapshot["chapters"], [])
 
+    def test_sample_seed_populates_a_fresh_database(self):
+        os.environ["LIFE_ATLAS_SEED_SAMPLE"] = "true"
+        self.app.initialise()
+        snapshot = self.app.snapshot()
+        self.assertEqual(len(snapshot["events"]), 6)
+        self.assertEqual(len(snapshot["chapters"]), 1)
+
+    def test_sample_chapter_is_not_added_to_an_existing_timeline(self):
+        self.app.save_event({"title": "Real event", "start_date": "2026-09-12"})
+        os.environ["LIFE_ATLAS_SEED_SAMPLE"] = "true"
+        self.app.initialise()
+        snapshot = self.app.snapshot()
+        self.assertEqual([event["title"] for event in snapshot["events"]], ["Real event"])
+        self.assertEqual(snapshot["chapters"], [])
+
     def test_event_round_trip(self):
         event_id = self.app.save_event({
             "title": "A remembered day",

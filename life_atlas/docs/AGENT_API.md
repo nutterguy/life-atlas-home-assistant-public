@@ -28,7 +28,7 @@ If `agent_api_key` is left empty the API stays running but refuses everything wi
 The API listens on port `8096` on the Home Assistant host, and `config.yaml` publishes that port so clients on your own network can reach it directly:
 
 ```bash
-curl -H "Authorization: Bearer $LIFE_ATLAS_AGENT_KEY" \
+curl -H "Authorization: Bearer $LIFE_ATLAS_AGENT_API_KEY" \
   http://homeassistant.local:8096/v1/health
 ```
 
@@ -66,7 +66,7 @@ Liveness plus a cheap integrity check. Safe to poll.
 ```json
 {
   "status": "ok",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "schema_version": 2,
   "database": "ok",
   "counts": {"events": 6, "people": 1, "places": 5, "trips": 1},
@@ -105,7 +105,7 @@ Responses are paginated:
 
 ```bash
 # Everything that happened in March 2025, oldest page first
-curl -H "Authorization: Bearer $LIFE_ATLAS_AGENT_KEY" \
+curl -H "Authorization: Bearer $LIFE_ATLAS_AGENT_API_KEY" \
   "http://localhost:8096/v1/events?from=2025-03-01&to=2025-03-31&limit=50"
 ```
 
@@ -125,7 +125,7 @@ Creates one event. Requires an `Idempotency-Key` header of 16 to 128 characters.
 
 ```bash
 curl -X POST http://localhost:8096/v1/events \
-  -H "Authorization: Bearer $LIFE_ATLAS_AGENT_KEY" \
+  -H "Authorization: Bearer $LIFE_ATLAS_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: chatgpt-2026-09-09-0001" \
   -d '{"title":"Dinner with Alex","start_date":"2026-09-09","status":"uncertain","confidence":0.6}'

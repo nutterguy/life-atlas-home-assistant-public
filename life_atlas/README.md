@@ -72,7 +72,7 @@ python app.py
 
 Then open `http://127.0.0.1:8099`.
 
-Home Assistant-specific behaviour is limited to `config.yaml`, `build.yaml`, `Dockerfile`, and `run.sh`; the application itself remains an ordinary Python/SQLite web service.
+Home Assistant-specific behaviour is limited to `config.yaml`, `Dockerfile`, and `run.sh`; the application itself remains an ordinary Python/SQLite web service.
 
 ## Privacy
 
