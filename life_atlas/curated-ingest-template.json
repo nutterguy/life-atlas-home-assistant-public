@@ -1,0 +1,46 @@
+{
+  "people": [
+    {
+      "name": "Example Person",
+      "aliases": ["Example"]
+    }
+  ],
+  "events": [
+    {
+      "source": "Example source",
+      "source_record_id": "stable-source-specific-id",
+      "title": "Example curated event",
+      "start_date": "2025-01-01",
+      "end_date": null,
+      "description": "A clean record prepared after source reconciliation.",
+      "category": "Life",
+      "status": "uncertain",
+      "confidence": 0.7,
+      "importance": "medium",
+      "date_precision": "day",
+      "memory": "",
+      "people": ["Example"],
+      "evidence": [
+        {
+          "source": "Gmail",
+          "type": "message",
+          "reference": "source-specific-id",
+          "observed_date": "2025-01-02",
+          "excerpt": "Short supporting summary",
+          "confidence": 0.7
+        }
+      ]
+    }
+  ],
+  "chapters": [
+    {
+      "title": "Example life chapter",
+      "start_date": "2025-01-01",
+      "end_date": "2025-12-31",
+      "summary": "Context for this period of life.",
+      "color": "#8ba3ff",
+      "confidence": 0.8
+    }
+  ]
+}
+

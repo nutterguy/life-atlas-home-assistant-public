@@ -1,0 +1,43 @@
+{
+  "_comment": "Synthetic demonstration data used when LIFE_ATLAS_SEED_SAMPLE=true and the database is empty. Every person, employer and event here is invented. Do not replace these with real personal records: this file ships to the public distribution repository, and scripts/validate_repository.py fails the build if known personal values reappear in any tracked file.",
+  "places": [
+    {"name": "Porto", "city": "Porto", "region": "Norte", "country": "Portugal", "latitude": 41.1579, "longitude": -8.6291},
+    {"name": "Northwind Studios", "city": "Reading", "region": "Berkshire", "country": "United Kingdom", "latitude": 51.4543, "longitude": -0.9781},
+    {"name": "Playa del Carmen", "city": "Playa del Carmen", "region": "Quintana Roo", "country": "Mexico", "latitude": 20.6296, "longitude": -87.0739},
+    {"name": "Riverside Festival", "city": "Ashcombe", "region": "Somerset", "country": "United Kingdom", "latitude": 51.1002, "longitude": -2.6004},
+    {"name": "Kyoto", "city": "Kyoto", "region": "Kansai", "country": "Japan", "latitude": 35.0116, "longitude": 135.7681}
+  ],
+  "sources": [
+    {"name": "Gmail", "source_type": "email"},
+    {"name": "Google Calendar", "source_type": "calendar"},
+    {"name": "App in the Air", "source_type": "travel_export"},
+    {"name": "WhatsApp", "source_type": "chat"}
+  ],
+  "people": [
+    {"name": "Alex Rivera", "relationship": "Friend"}
+  ],
+  "trips": [
+    {"title": "Mexico holiday", "start_date": "2025-03-22", "end_date": "2025-03-28", "status": "confirmed", "notes": "Sample record"}
+  ],
+  "events": [
+    {"title": "Japan trip", "start_date": "2016-09-02", "end_date": "2016-09-18", "category": "Travel", "status": "confirmed", "confidence": 0.86, "importance": "major", "place": "Kyoto", "trip": null, "review_state": "clear"},
+    {"title": "Mexico holiday with Alex", "start_date": "2025-03-22", "end_date": "2025-03-28", "category": "Travel", "status": "confirmed", "confidence": 0.95, "importance": "major", "place": "Playa del Carmen", "trip": "Mexico holiday", "review_state": "clear"},
+    {"title": "Accepted Producer role at Northwind Studios", "start_date": "2025-05-19", "end_date": "2025-05-19", "category": "Career", "status": "confirmed", "confidence": 1, "importance": "major", "place": "Northwind Studios", "trip": null, "review_state": "clear"},
+    {"title": "Started at Northwind Studios", "start_date": "2025-06-10", "end_date": "2025-06-10", "category": "Career", "status": "confirmed", "confidence": 1, "importance": "major", "place": "Northwind Studios", "trip": null, "review_state": "clear"},
+    {"title": "Riverside Festival", "start_date": "2025-06-25", "end_date": "2025-06-29", "category": "Music", "status": "booked", "confidence": 0.75, "importance": "major", "place": "Riverside Festival", "trip": null, "review_state": "needs_review"},
+    {"title": "Porto summer trip", "start_date": "2025-07-11", "end_date": "2025-07-16", "category": "Travel", "status": "uncertain", "confidence": 0.55, "importance": "medium", "place": "Porto", "trip": null, "review_state": "needs_review"}
+  ],
+  "event_people": [
+    {"event": "Mexico holiday with Alex", "person": "Alex Rivera", "role": "with"}
+  ],
+  "evidence": [
+    {"event": "Mexico holiday with Alex", "source": "Gmail", "evidence_type": "booking", "source_ref": "sample-email-ref", "excerpt": "Flight and accommodation confirmations", "confidence": 0.95}
+  ],
+  "review_items": [
+    {"event": "Riverside Festival", "issue_type": "attendance", "summary": "Confirm attendance: Riverside Festival", "details": "Booked or mentioned, but confirmed attendance evidence is incomplete."},
+    {"event": "Porto summer trip", "issue_type": "attendance", "summary": "Confirm attendance: Porto summer trip", "details": "Booked or mentioned, but confirmed attendance evidence is incomplete."}
+  ],
+  "chapters": [
+    {"title": "A year of change", "start_date": "2025-01-01", "end_date": "2025-12-31", "summary": "Travel, a new role, festivals and outdoor events.", "color": "#8ba3ff", "confidence": 0.7}
+  ]
+}
