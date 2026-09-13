@@ -239,7 +239,8 @@ class Handler(BaseHTTPRequestHandler):
                     "schema_version": schema_version, "database": integrity, "counts": counts,
                     "capabilities": ["search_events", "filter_events_by_date", "paginate_events",
                                      "get_event", "search_people", "create_event", "create_event_evidence",
-                                     "search_whatsapp_evidence", "promote_whatsapp_evidence"]})
+                                     "search_whatsapp_evidence", "get_whatsapp_context",
+                                     "promote_whatsapp_evidence"]})
             params = parse_qs(parsed.query)
             if parsed.path == "/v1/people":
                 query = params.get("q", [""])[0]
@@ -260,6 +261,12 @@ class Handler(BaseHTTPRequestHandler):
                 limit = min(MAX_LIMIT, max(1, int(params.get("limit", ["20"])[0])))
                 return self._send(200, app.whatsapp_search(
                     query, limit=limit, cursor=params.get("cursor", [""])[0] or None
+                ))
+            if parsed.path == "/v1/whatsapp/context":
+                return self._send(200, app.whatsapp_context(
+                    params.get("source_id", [""])[0],
+                    before=params.get("before", ["5"])[0],
+                    after=params.get("after", ["5"])[0],
                 ))
             if parsed.path.startswith("/v1/events/"):
                 return self._send(200, app.entity_detail("event", int(parsed.path.rsplit("/", 1)[1])))

@@ -535,6 +535,33 @@ def whatsapp_search(query, *, limit=50, cursor=None):
     }
 
 
+def _whatsapp_item_json(item):
+    return {
+        "source_id": item.source_id,
+        "timestamp": item.timestamp,
+        "lifecycle": item.lifecycle.value,
+        "text": item.text,
+        "participants": [
+            {"source_id": person.source_id, "kind": person.kind, "label": person.label}
+            for person in item.participants
+        ],
+        "content_hash": item.content_hash,
+        "metadata": dict(item.metadata),
+    }
+
+
+def whatsapp_context(source_id, *, before=5, after=5):
+    context = make_whatsapp_client().context(
+        str(source_id or "").strip(), before=int(before), after=int(after)
+    )
+    return {
+        "focus_source_id": context.focus_source_id,
+        "conversation_id": context.conversation_id,
+        "conversation_name": context.conversation_name,
+        "items": [_whatsapp_item_json(item) for item in context.items],
+    }
+
+
 def promote_whatsapp_event(payload, idempotency_key=None):
     request_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     event_payload = dict(payload)
@@ -818,6 +845,16 @@ class Handler(SimpleHTTPRequestHandler):
                     params.get("q", [""])[0],
                     limit=params.get("limit", ["50"])[0],
                     cursor=params.get("cursor", [None])[0],
+                ))
+            except (ValueError, ConnectorError, OSError) as exc:
+                return self.send_json({"error": str(exc)}, 400)
+        if route == "/api/whatsapp/context":
+            params = parse_qs(parsed.query)
+            try:
+                return self.send_json(whatsapp_context(
+                    params.get("source_id", [""])[0],
+                    before=params.get("before", ["5"])[0],
+                    after=params.get("after", ["5"])[0],
                 ))
             except (ValueError, ConnectorError, OSError) as exc:
                 return self.send_json({"error": str(exc)}, 400)

@@ -3,6 +3,12 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.17.2
+
+- Recovered direct-chat names from archived incoming-message identity when WhatsApp's chat metadata has no usable name.
+- Added **Show nearby messages** to WhatsApp evidence results, with five messages on either side and explicit selection of any useful surrounding message.
+- Added the same bounded, read-only conversation context to the private agent API without automatically promoting any message into Life Atlas.
+
 ## 0.17.1
 
 - Logged unexpected connector failures with their traceback while keeping internal details out of HTTP responses.

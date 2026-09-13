@@ -137,6 +137,14 @@ class SearchPage:
     next_cursor: str | None = None
 
 
+@dataclass(frozen=True)
+class ConversationContext:
+    focus_source_id: str
+    conversation_id: str
+    conversation_name: str | None
+    items: tuple[SourceItem, ...]
+
+
 class ConnectorTransport(Protocol):
     """Transport boundary used by Life Atlas core.
 
@@ -222,6 +230,32 @@ class ConnectorClient:
         if not isinstance(raw_item, Mapping):
             raise ConnectorProtocolError("Item response must contain an item object")
         return _parse_source_item(raw_item)
+
+    def context(self, source_id: str, *, before: int = 5, after: int = 5) -> ConversationContext:
+        if not isinstance(source_id, str) or not source_id.strip() or len(source_id) > 512:
+            raise ValueError("source_id is invalid")
+        if isinstance(before, bool) or isinstance(after, bool) or not 0 <= before <= 20 or not 0 <= after <= 20:
+            raise ValueError("before and after must be between 0 and 20")
+        self.capabilities().require("conversation_context")
+        payload = self._request(
+            "context", {"source_id": source_id, "before": before, "after": after}
+        )
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list):
+            raise ConnectorProtocolError("Context response must contain an items list")
+        focus = payload.get("focus_source_id")
+        conversation_id = payload.get("conversation_id")
+        conversation_name = payload.get("conversation_name")
+        if focus != source_id or not isinstance(conversation_id, str) or not conversation_id:
+            raise ConnectorProtocolError("Context response has invalid conversation identity")
+        if conversation_name is not None and not isinstance(conversation_name, str):
+            raise ConnectorProtocolError("conversation_name must be a string or null")
+        return ConversationContext(
+            focus_source_id=focus,
+            conversation_id=conversation_id,
+            conversation_name=conversation_name,
+            items=tuple(_parse_source_item(item) for item in raw_items),
+        )
 
     def iter_search(self, query: str, *, limit: int = 50, max_pages: int | None = None):
         cursor: str | None = None

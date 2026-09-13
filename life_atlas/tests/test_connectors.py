@@ -213,6 +213,20 @@ class ConnectorModelTests(unittest.TestCase):
         self.assertEqual(item.text, "Evidence")
         self.assertIn(("item", {"source_id": "message:1"}), transport.calls)
 
+    def test_conversation_context_is_capability_gated_and_parsed(self):
+        client, transport = client_with({
+            "capabilities": {"capabilities": ["conversation_context"]},
+            "context": {
+                "focus_source_id": "message:1", "conversation_id": "chat:1",
+                "conversation_name": "Alex",
+                "items": [{"source_id": "message:1", "item_type": "message", "text": "Evidence"}],
+            },
+        })
+        context = client.context("message:1", before=2, after=3)
+        self.assertEqual(context.conversation_name, "Alex")
+        self.assertEqual(context.items[0].text, "Evidence")
+        self.assertIn(("context", {"source_id": "message:1", "before": 2, "after": 3}), transport.calls)
+
     def test_iter_search_handles_pagination(self):
         pages = [
             {

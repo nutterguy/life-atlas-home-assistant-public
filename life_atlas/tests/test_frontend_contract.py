@@ -43,6 +43,8 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('id="whatsapp-evidence"', self.html)
         self.assertIn("function whatsappEvidence()", self.script)
         self.assertIn("/api/whatsapp/search", self.script)
+        self.assertIn("/api/whatsapp/context", self.script)
+        self.assertIn("Show nearby messages", self.script)
         self.assertIn("/api/whatsapp/promote", self.script)
         self.assertIn("window.confirm", self.script)
         self.assertIn("at most 20 messages", self.script)

@@ -26,6 +26,7 @@ _OPERATION_ROUTES = {
     "capabilities": ("GET", f"{PROTOCOL_PREFIX}/capabilities"),
     "search": ("POST", f"{PROTOCOL_PREFIX}/search"),
     "item": ("POST", f"{PROTOCOL_PREFIX}/item"),
+    "context": ("POST", f"{PROTOCOL_PREFIX}/context"),
     # Pairing precedes the key, so it is the one operation sent unauthenticated.
     "pair": ("POST", f"{PROTOCOL_PREFIX}/pair"),
 }

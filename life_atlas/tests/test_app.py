@@ -78,9 +78,16 @@ class LifeAtlasTests(unittest.TestCase):
             def item(self, source_id):
                 return item
 
+            def context(self, source_id, *, before=5, after=5):
+                from connectors import ConversationContext
+                return ConversationContext(source_id, "chat-1", "Alex", (item,))
+
         self.app.make_whatsapp_client = lambda: Client()
         result = self.app.whatsapp_search("booked")
         self.assertEqual(result["items"][0]["source_id"], "wa-message-1")
+        context = self.app.whatsapp_context("wa-message-1")
+        self.assertEqual(context["conversation_name"], "Alex")
+        self.assertEqual(context["items"][0]["source_id"], "wa-message-1")
         event_id, replayed = self.app.promote_whatsapp_event({
             "source_ids": ["wa-message-1"], "title": "Dinner with Alex",
             "start_date": "2026-09-18", "status": "uncertain", "confidence": 0.6,
