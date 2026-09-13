@@ -6,9 +6,15 @@ This separation is deliberate. Life Atlas does not ship a WhatsApp bridge, does 
 
 ## Install the archive app
 
-1. In Home Assistant, add the private **Life Atlas Connectors** repository if it is not already added.
-2. Install **Life Atlas WhatsApp Archive** and start it.
-3. Open its own Ingress page and follow the pairing steps below.
+`nutterguy/life-atlas-connectors` is private, so Home Assistant cannot add it as an app repository — Supervisor has no credentials for it. Connectors are installed as **local apps** instead, the same way the reference connector was: copy the app's folder into Home Assistant's `/addons` share and Supervisor builds it on the box.
+
+Install it as a local app, not through a repository URL. A repository-installed app is addressed by a repository hash prefix, while a local app is addressed as `local-` plus its slug — and `local-life-atlas-whatsapp-archive` is the address Life Atlas seeds and the reference connector already uses.
+
+1. Copy the `whatsapp_archive` folder from the connectors repository into `/addons/life_atlas_whatsapp_archive` on the Home Assistant host. Use the Samba share (`\\homeassistant\addons`), the Terminal & SSH app, or `scp`.
+2. Make sure `run.sh` keeps Unix (LF) line endings. A copy made on Windows can convert them to CRLF, and the container then fails to start with a bad-interpreter error.
+3. In Home Assistant, open **Settings → Apps**, select the three-dot menu and **Check for updates**, then look under **Local apps**.
+4. Install **Life Atlas WhatsApp Archive** and start it. The first build pulls the pinned WAHA image, so it takes several minutes and needs disk space.
+5. Open its own Ingress page and follow the pairing steps below.
 
 ## Link and choose chats
 
