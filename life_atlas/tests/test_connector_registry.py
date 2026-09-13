@@ -214,6 +214,64 @@ class ConnectorRegistryTests(unittest.TestCase):
         # The existing row survives: migration must not reseed over it.
         self.assertEqual(entry["base_url"], "http://x:8097")
 
+    def serve_refusing(self):
+        """A connector that demands a key and will not pair."""
+        service = MockConnectorService("healthy")
+
+        class Refusing(make_protocol_handler(service)):
+            def do_GET(self):
+                return self._json_error(401, "unauthorised", "Connector key rejected")
+
+            def do_POST(self):
+                return self._json_error(403, "already_paired", "Already paired")
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Refusing)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        host, port = server.server_address[:2]
+        return f"http://{host}:{port}/"
+
+    def test_a_connector_that_refuses_and_will_not_pair_is_skipped(self):
+        """A connector already paired with something else must not be registered
+        half-configured; it is left for the person to sort out deliberately."""
+        found = registry.discover_at(self.data, [{"slug": "life_atlas_reference_connector",
+                                                  "base_url": self.serve_refusing()}])
+        self.assertEqual(found, [])
+
+    def test_an_address_is_derived_from_the_app_network_naming_rule(self):
+        """Nothing is typed, so nothing can be typed wrong."""
+        self.assertEqual(
+            registry.candidate_address("life_atlas_whatsapp_archive", 8097),
+            "http://local-life-atlas-whatsapp-archive:8097",
+        )
+
+    def test_discovery_registers_a_connector_under_the_identity_it_declares(self):
+        base_url = self.serve()
+        found = registry.discover_at(self.data, [{"slug": "life_atlas_reference_connector",
+                                                 "base_url": base_url}])
+        self.assertEqual([entry["connector_id"] for entry in found], ["reference"])
+        entry = registry.get_connector(self.data, "reference")
+        self.assertEqual(entry["base_url"], base_url.rstrip("/"))
+        self.assertEqual(entry["manage_slug"], "local_life_atlas_reference_connector")
+        self.assertTrue(entry["enabled"])
+
+    def test_discovery_leaves_a_connector_the_person_switched_off_switched_off(self):
+        base_url = self.serve()
+        registry.discover_at(self.data, [{"slug": "life_atlas_reference_connector",
+                                          "base_url": base_url}])
+        registry.set_enabled(self.data, "reference", False)
+        registry.discover_at(self.data, [{"slug": "life_atlas_reference_connector",
+                                          "base_url": base_url}])
+        self.assertFalse(registry.get_connector(self.data, "reference")["enabled"])
+
+    def test_an_address_with_nothing_installed_is_skipped_quietly(self):
+        found = registry.discover_at(self.data, [{"slug": "life_atlas_absent",
+                                                  "base_url": "http://127.0.0.1:9/"}])
+        self.assertEqual(found, [])
+
     def test_the_connector_key_is_stored_but_never_returned(self):
         entry = self.register(self.serve(), auth_key="secret-key")
         self.assertTrue(entry["has_key"])

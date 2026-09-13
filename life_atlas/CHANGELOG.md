@@ -3,6 +3,11 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.17.0
+
+- Connectors configure themselves. Life Atlas finds the connector apps installed alongside it, registers each under the identity the connector declares, and pairs with it to obtain its key. There is no address to look up, no key to copy and no identifier to get right. **Find connectors** on the Sources page repeats the search on demand, and it also runs quietly at start-up.
+- A connector found for the first time is switched on, because one that is installed should simply work. Once you have touched its switch, that decision is yours and discovery never overrides it.
+
 ## 0.16.2
 
 - Fixed the WhatsApp archive connector reporting **Incompatible**. Life Atlas registered it under an identifier the connector does not use, and the registry correctly refused a connector whose declared identity did not match its registration. The registration is corrected in place on upgrade, so a stored connector key and the on/off switch survive; nothing needs re-entering.

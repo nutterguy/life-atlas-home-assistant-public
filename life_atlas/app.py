@@ -57,12 +57,22 @@ def connect():
     return con
 
 
+def _discover_connectors() -> None:
+    try:
+        connector_registry.discover(DATA)
+    except Exception as exc:  # discovery is an optimisation, never a dependency
+        print(f"Connector discovery skipped: {exc}", flush=True)
+
+
 def initialise():
     DATA.mkdir(exist_ok=True)
     IMPORTS.mkdir(exist_ok=True)
     BACKUPS.mkdir(exist_ok=True)
     MEDIA.mkdir(exist_ok=True)
     connector_registry.initialise(DATA)
+    # A connector installed alongside Life Atlas should need no configuring.
+    # Never let an unreachable one delay or fail start-up.
+    threading.Thread(target=_discover_connectors, name='connector-discovery', daemon=True).start()
     restore_manager().initialise()
     seed_sample = os.environ.get("LIFE_ATLAS_SEED_SAMPLE", "false").lower() == "true"
     with closing(connect()) as con, con:
@@ -882,6 +892,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if route == "/api/connectors":
                     return self.send_json(connector_registry.save_connector(DATA, payload), 201)
                 if route == "/api/connectors/refresh":
+                    return self.send_json({"connectors": connector_registry.probe_all(DATA)})
+                if route == "/api/connectors/discover":
+                    connector_registry.discover(DATA)
                     return self.send_json({"connectors": connector_registry.probe_all(DATA)})
                 if route.startswith("/api/connectors/"):
                     return self._connector_action(route, payload)

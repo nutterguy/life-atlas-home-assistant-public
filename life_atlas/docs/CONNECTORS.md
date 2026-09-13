@@ -396,3 +396,16 @@ The agreed implementation order is:
 18. add upstream update monitoring and contract-gated upgrades;
 19. execute the full failure matrix;
 20. freeze Connector Protocol v1 after Google Photos and WhatsApp prove the abstraction.
+
+## Discovery and pairing
+
+A connector installed as a local Home Assistant app needs no configuring.
+
+Home Assistant names every app on its internal network `{repo}-{slug}`, with underscores replaced by hyphens and `local` as the repository for a locally installed one, so an address is derivable and should never be typed. Life Atlas holds a small catalogue of connector slugs and ports, probes each on start-up and on demand, and registers whatever answers.
+
+The identity comes from the connector, never from Life Atlas. `/v1/info` says what a connector calls itself, and that is the identifier it is registered under. An identifier chosen anywhere else can be chosen wrongly, and once was.
+
+The key is obtained by pairing. A connector that refuses an unauthenticated request is asked to pair; it grants its key to the first caller and to no caller afterwards. Both apps are installed by the same person on the same machine, so requiring a copied secret between them was ceremony rather than security. The risk is that another app on the internal network could claim it first, so the claim is not silent: the connector records the time and the peer, shows both on its own page, and can be told to forget a pairing so the key is handed over again deliberately.
+
+A connector found for the first time is switched on. Once a person has touched its switch they own it, and discovery never overrides that.
+

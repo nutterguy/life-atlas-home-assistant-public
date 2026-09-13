@@ -21,15 +21,16 @@ const CONNECTOR_KINDS={
 function connectorState(c){return CONNECTOR_STATES[c.state]||CONNECTOR_STATES.unknown}
 function connectorStamp(value){return value?String(value).replace('T',' ').replace('Z',' UTC'):'never'}
 
-async function loadConnectors(refresh){
+async function loadConnectors(refresh,discover){
   if(connectorLoading)return;
   connectorLoading=true;
   // sources() starts the first load while render() is still running, so the
   // busy repaint is deferred rather than re-entering render from inside itself.
   if(view==='sources')setTimeout(()=>{if(connectorLoading&&view==='sources')render()},0);
   try{
-    const response=refresh
-      ?await fetch('/api/connectors/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    const endpoint=discover?'/api/connectors/discover':'/api/connectors/refresh';
+    const response=(refresh||discover)
+      ?await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
       :await fetch('/api/connectors');
     if(!response.ok)throw new Error(`Connector request failed (${response.status})`);
     connectorData=(await response.json()).connectors||[];
@@ -53,6 +54,7 @@ function sources(){
     <div class="entity-actions">
       <button class="primary" data-connector-action="new">＋ Add connector</button>
       <button data-connector-action="refresh"${connectorLoading?' disabled':''}>${connectorLoading?'Checking…':'↻ Check all'}</button>
+      <button data-connector-action="discover"${connectorLoading?' disabled':''} title="Find connectors installed alongside Life Atlas and pair with them">⌕ Find connectors</button>
     </div>
     <p class="muted">Each connector runs as its own app and owns its own archive. Life Atlas keeps only the curated record, so switching a connector off never removes evidence that was already promoted into it.</p>
     ${connectorData.length?`<div class="connector-list">${rows}</div>`:'<div class="diary-empty"><div><b>No connectors registered</b><p>Add one to let Life Atlas reach a source archive, or to let a client read the curated record.</p></div></div>'}
@@ -110,6 +112,7 @@ document.addEventListener('click',async e=>{
   if(!button||view!=='sources')return;
   const action=button.dataset.connectorAction;
   if(action==='refresh')return loadConnectors(true);
+  if(action==='discover')return loadConnectors(false,true);
   if(action==='new')return openConnectorEditor(null);
   const card=button.closest('[data-connector-id]');
   if(!card)return;

@@ -30,7 +30,7 @@ from typing import Any
 
 from connector_http import HTTPConnectorTransport
 from connectors import (ConnectorAuthRequired, ConnectorClient, ConnectorError,
-                        ConnectorUnavailable, SourceItem)
+                        ConnectorProtocolError, ConnectorUnavailable, SourceItem)
 
 REGISTRY_FILENAME = "connectors.sqlite3"
 DEFAULT_TIMEOUT_SECONDS = 2.0
@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS connectors (
   manage_slug TEXT NOT NULL DEFAULT '',
   auth_key TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+  switch_owned INTEGER NOT NULL DEFAULT 0 CHECK(switch_owned IN (0,1)),
   notes TEXT NOT NULL DEFAULT '',
   cursor TEXT NOT NULL DEFAULT '',
   last_state TEXT NOT NULL DEFAULT 'unknown',
@@ -62,6 +63,20 @@ CREATE TABLE IF NOT EXISTS connectors (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
+
+# Where a connector lives when it is installed as a local Home Assistant app.
+# The internal network names every app {repo}-{slug} with underscores replaced by
+# hyphens, and "local" as the repository for a locally installed one, so an
+# address is derivable and should never have to be typed.
+DISCOVERABLE = (
+    {"slug": "life_atlas_whatsapp_archive", "port": 8097},
+    {"slug": "life_atlas_reference_connector", "port": 8098},
+)
+
+
+def candidate_address(slug: str, port: int, *, repo: str = "local") -> str:
+    return f"http://{repo}-{slug}:{port}".replace("_", "-")
+
 
 # Seeded once, on an empty registry, so the Sources view opens with the known
 # connectors listed and switched off rather than empty. A deleted row stays
@@ -153,7 +168,10 @@ def _add_missing_columns(con: sqlite3.Connection) -> None:
     later has to be added explicitly or every query against it fails.
     """
     have = {row["name"] for row in con.execute("PRAGMA table_info(connectors)")}
-    for column, definition in (("manage_slug", "TEXT NOT NULL DEFAULT ''"),):
+    for column, definition in (
+        ("manage_slug", "TEXT NOT NULL DEFAULT ''"),
+        ("switch_owned", "INTEGER NOT NULL DEFAULT 0"),
+    ):
         if column not in have:
             con.execute(f"ALTER TABLE connectors ADD COLUMN {column} {definition}")
 
@@ -168,7 +186,7 @@ def get_connector(data_dir: Path, connector_id: str) -> dict[str, Any]:
     return _public(_row(data_dir, connector_id))
 
 
-def save_connector(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+def save_connector(data_dir: Path, payload: dict[str, Any], *, by_person: bool = True) -> dict[str, Any]:
     """Register a new connector or update an existing one.
 
     An omitted key leaves the stored key untouched, so the UI can save a row it
@@ -199,15 +217,17 @@ def save_connector(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
             auth_key = existing["auth_key"] if existing else ""
         con.execute(
             """
-            INSERT INTO connectors(connector_id,name,kind,base_url,manage_slug,auth_key,enabled,notes)
-            VALUES(?,?,?,?,?,?,?,?)
+            INSERT INTO connectors(connector_id,name,kind,base_url,manage_slug,auth_key,enabled,notes,switch_owned)
+            VALUES(?,?,?,?,?,?,?,?,?)
             ON CONFLICT(connector_id) DO UPDATE SET
               name=excluded.name, kind=excluded.kind, base_url=excluded.base_url,
               manage_slug=excluded.manage_slug, auth_key=excluded.auth_key,
               enabled=excluded.enabled, notes=excluded.notes,
+              switch_owned=MAX(connectors.switch_owned,excluded.switch_owned),
               updated_at=CURRENT_TIMESTAMP
             """,
-            (connector_id, name, kind, base_url, manage_slug, auth_key, enabled, notes),
+            (connector_id, name, kind, base_url, manage_slug, auth_key, enabled, notes,
+             1 if by_person else 0),
         )
         # Address, credential or kind may all have changed; the cached status
         # describes the old configuration and must not be presented as current.
@@ -223,7 +243,8 @@ def set_enabled(data_dir: Path, connector_id: str, enabled: bool) -> dict[str, A
     _row(data_dir, connector_id)
     with closing(connect(data_dir)) as con, con:
         con.execute(
-            "UPDATE connectors SET enabled=?, updated_at=CURRENT_TIMESTAMP WHERE connector_id=?",
+            "UPDATE connectors SET enabled=?, switch_owned=1, updated_at=CURRENT_TIMESTAMP"
+            " WHERE connector_id=?",
             (1 if enabled else 0, connector_id),
         )
         if not enabled:
@@ -285,6 +306,98 @@ def search(data_dir: Path, connector_id: str, query: str, *, limit: int = MAX_SE
         "items": [_item_json(item) for item in page.items],
         "next_cursor": page.next_cursor,
     }
+
+
+def discover(data_dir: Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> list[dict[str, Any]]:
+    """Register the connectors installed alongside Life Atlas, without being told.
+
+    Nothing is typed, so nothing can be typed wrong: the address comes from the
+    app network's naming rule, and the identity comes from the connector itself
+    rather than from a name this repository invented.
+
+    A connector that answers without a key needs none. One that refuses is asked
+    to pair, which it grants once; the key is stored and never shown again.
+    """
+    candidates = [
+        {"slug": entry["slug"], "base_url": candidate_address(entry["slug"], entry["port"])}
+        for entry in DISCOVERABLE
+    ]
+    return discover_at(data_dir, candidates, timeout=timeout)
+
+
+def discover_at(data_dir: Path, candidates: list[dict[str, str]], *,
+                timeout: float = DEFAULT_TIMEOUT_SECONDS) -> list[dict[str, Any]]:
+    """Discovery against explicit addresses, so it can be exercised without DNS."""
+    found: list[dict[str, Any]] = []
+    for entry in candidates:
+        base_url = entry["base_url"]
+        key = ""
+        try:
+            info = _probe_identity(base_url, key, timeout=timeout)
+        except ConnectorAuthRequired:
+            key = _pair(base_url, timeout=timeout)
+            if not key:
+                continue
+            try:
+                info = _probe_identity(base_url, key, timeout=timeout)
+            except ConnectorError:
+                continue
+        except ConnectorError:
+            continue  # nothing installed at that address, which is not an error
+
+        existing = None
+        try:
+            existing = _row(data_dir, info["connector_id"])
+        except RegistryError:
+            pass
+        payload: dict[str, Any] = {
+            "connector_id": info["connector_id"],
+            "name": info["name"] or info["connector_id"],
+            "kind": existing["kind"] if existing else "source",
+            "base_url": base_url,
+            "manage_slug": f"local_{entry['slug']}",
+            "notes": existing["notes"] if existing else "",
+            # Switch on a connector found for the first time, because one that
+            # is installed and paired should simply work. Once a person has
+            # touched the switch they own it, and discovery never overrides a
+            # decision: a connector switched off stays off.
+            "enabled": bool(existing["enabled"]) if (existing and existing["switch_owned"]) else True,
+        }
+        if key:
+            payload["auth_key"] = key
+        found.append(save_connector(data_dir, payload, by_person=False))
+    return found
+
+
+def _probe_identity(base_url: str, key: str, *, timeout: float) -> dict[str, str]:
+    """Read who a connector says it is.
+
+    Deliberately not ConnectorClient.info(), which asserts the identity against
+    one already chosen. Discovery has not chosen one yet: that assertion is what
+    it exists to make unnecessary.
+    """
+    transport = HTTPConnectorTransport(
+        base_url,
+        timeout=timeout,
+        headers={"X-Life-Atlas-Connector-Key": key} if key else None,
+    )
+    answer = transport.request("info")
+    connector_id = str(answer.get("connector_id") or "").strip()
+    if not connector_id:
+        raise ConnectorProtocolError("Connector did not identify itself")
+    return {"connector_id": connector_id, "name": str(answer.get("name") or "").strip()}
+
+
+def _pair(base_url: str, *, timeout: float) -> str:
+    """Claim a connector's key on first contact. It is granted once, or never."""
+    try:
+        answer = HTTPConnectorTransport(base_url, timeout=timeout).request(
+            "pair", {"peer": "life-atlas"}
+        )
+    except ConnectorError:
+        return ""
+    key = str(answer.get("connector_key") or "").strip()
+    return key
 
 
 def client_for(data_dir: Path, connector_id: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> ConnectorClient:
