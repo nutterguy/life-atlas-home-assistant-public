@@ -1,0 +1,36 @@
+name: "Life Atlas WhatsApp Archive"
+description: "Read-only WhatsApp history archive and Life Atlas connector"
+version: "0.7.0"
+slug: "life_atlas_whatsapp_archive"
+init: false
+arch:
+  - amd64
+  - aarch64
+image: "ghcr.io/nutterguy/{arch}-life-atlas-whatsapp-archive"
+startup: services
+boot: auto
+homeassistant_api: false
+hassio_api: false
+host_network: false
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:message-text-lock"
+panel_admin: true
+backup: cold
+backup_exclude:
+  - "waha/noweb/*/store.sqlite3*"
+stage: experimental
+ports:
+  8097/tcp: null
+ports_description:
+  8097/tcp: "Life Atlas Connector Protocol v1 (internal only)"
+options:
+  session_name: "life-atlas"
+  reconcile_seconds: 300
+  full_rescan_hours: 24
+  history_page_size: 500
+schema:
+  session_name: "match(^[a-zA-Z0-9_-]{1,64}$)"
+  reconcile_seconds: "int(30,3600)"
+  full_rescan_hours: "int(1,168)"
+  history_page_size: "int(50,1000)"

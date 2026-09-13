@@ -8,8 +8,13 @@ Add this repository in **Settings → Apps → App store → Repositories**:
 
 `https://github.com/nutterguy/life-atlas-home-assistant-public`
 
-Life Atlas is built as a versioned container image. Home Assistant updates the
-application image while preserving its Supervisor-managed `/data` volume.
+The repository contains two independently installed apps:
 
-The contents of `life_atlas/` are generated from an explicit allowlist in the
-private canonical repository. Changes should not be made directly here.
+- **Life Atlas**, the curated personal timeline.
+- **Life Atlas WhatsApp Archive**, the read-only WhatsApp source archive.
+
+Both are built as versioned container images. Home Assistant updates each app
+independently while preserving its own Supervisor-managed `/data` volume.
+
+The app folders are generated from private canonical repositories and contain no
+personal messages, databases, credentials, backups, or pairing state.
