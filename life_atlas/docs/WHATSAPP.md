@@ -1,32 +1,48 @@
 # WhatsApp archive
 
-Life Atlas includes a read-only WhatsApp archive powered by the pinned WAHA NOWEB bridge. It is part of the Life Atlas Home Assistant app; there is no separate connector repository to install.
+The WhatsApp archive is a **separate Home Assistant app**, not part of Life Atlas. Life Atlas holds a registration for it and talks to it only over Life Atlas Connector Protocol v1. Install it, switch it on, and Life Atlas can read it; remove it and Life Atlas carries on with every other source untouched.
+
+This separation is deliberate. Life Atlas does not ship a WhatsApp bridge, does not hold pairing state, and cannot be taken offline by one.
+
+## Install the archive app
+
+1. In Home Assistant, add the private **Life Atlas Connectors** repository if it is not already added.
+2. Install **Life Atlas WhatsApp Archive** and start it.
+3. Open its own Ingress page and follow the pairing steps below.
 
 ## Link and choose chats
 
-1. Update and start Life Atlas, then open it through Home Assistant.
-2. Select **WhatsApp archive** in the Life Atlas sidebar.
-3. Select **Create / start** and scan the QR code from WhatsApp under **Linked devices**.
-4. Wait for the session status to become `WORKING` and refresh the chat inventory.
-5. Review the chat list. Automatic policy includes active chats and excludes archived chats. **Always include** and **Always exclude** override that default.
-6. Review the proposed totals and select **Confirm selection & archive**. No message content is written to the durable archive before this confirmation.
-7. Wait for the full reconciliation and confirm the durable counts and coverage dates shown in the interface.
+1. Select **Create / start** and scan the QR code from WhatsApp under **Linked devices**.
+2. Wait for the session status to become `WORKING` and refresh the chat inventory.
+3. Review the chat list. Automatic policy includes active chats and excludes archived chats. **Always include** and **Always exclude** override that default.
+4. Review the proposed totals and select **Confirm selection & archive**. No message content is written to the durable archive before this confirmation.
+5. Wait for the full reconciliation and confirm the durable counts and coverage dates shown in the interface.
 
 WAHA must temporarily receive the account-wide linked-device history that WhatsApp supplies. Its staging database is excluded from Home Assistant backups. Only effectively included chats are copied to the durable archive.
 
+## Connect it to Life Atlas
+
+1. On the archive app's page, select **Reveal key** and copy its connector key.
+2. In Life Atlas, open **Sources**, find **WhatsApp archive**, and select **Configure**.
+3. Paste the key. The address is the app's internal name on the Home Assistant app network — for a locally installed app, `http://local-life-atlas-whatsapp-archive:8097`. A repository-installed app uses the repository hash prefix instead, so take the name Supervisor actually shows.
+4. Switch the connector on and select **Check now**. It should read *Available* with its capabilities listed.
+
+Life Atlas stores that address and key in `/data/connectors.sqlite3`, never in the life record. The key is write-only: it is never shown again, and never returned by the API.
+
 ## Storage and backup
 
-- `/data/whatsapp/archive/whatsapp-archive.sqlite3` is the durable selected-message archive.
-- `/data/whatsapp/waha` contains linked-device state and WAHA staging.
-- `/data/whatsapp/secrets` contains generated internal credentials.
-- Home Assistant cold backups retain the durable archive, pairing state, and internal credentials.
-- `whatsapp/waha/noweb/*/store.sqlite3*` is excluded because it is rebuildable staging and can be large.
+Everything WhatsApp lives in the archive app's own `/data`:
 
-The **Back up** download inside Life Atlas remains the portable canonical timeline package; use a Home Assistant backup to protect the WhatsApp archive and pairing state.
+- `/data/archive/whatsapp-archive.sqlite3` is the durable selected-message archive.
+- `/data/waha` contains linked-device state and WAHA staging.
+- `/data/secrets` contains generated internal credentials.
+- `waha/noweb/*/store.sqlite3*` is excluded from backups because it is rebuildable staging and can be large.
+
+A Life Atlas backup does **not** contain the WhatsApp archive or its pairing state; a Home Assistant backup of the archive app does. The **Back up** download inside Life Atlas remains the portable canonical timeline package.
 
 ## Read-only boundary
 
-WAHA, the archive adapter, and the connector protocol all bind to loopback inside the Life Atlas container. Home Assistant publishes none of their ports. The steady-state WAHA key explicitly denies send, reaction, typing, presence, mark-read, edit, forward, and delete-message capabilities. Only the authenticated Home Assistant Ingress management interface is exposed.
+WAHA and the archive adapter bind to loopback inside the archive app's own container, and it publishes no host port — only Connector Protocol v1 on the internal app network, and an administrator-only Ingress page for pairing and diagnostics. The steady-state WAHA key explicitly denies send, reaction, typing, presence, mark-read, edit, forward, and delete-message capabilities.
 
 ## Historical coverage
 
@@ -34,7 +50,7 @@ Historical coverage means the history WhatsApp supplies to a newly linked device
 
 ## Relationship to Life Atlas events
 
-Messages are source evidence, not timeline events. **WhatsApp evidence** in the Life Atlas sidebar provides the reviewed promotion flow:
+Messages are source evidence, not timeline events. **WhatsApp evidence** in the Life Atlas sidebar provides the reviewed promotion flow, and it stays in Life Atlas because it writes to the life record:
 
 1. search the selected durable archive;
 2. choose up to 20 messages that support one event;
@@ -42,4 +58,6 @@ Messages are source evidence, not timeline events. **WhatsApp evidence** in the 
 4. review its dates, attendance state, confidence, importance and people;
 5. explicitly create the event and immutable evidence excerpts.
 
-Search results remain connector-owned until the final confirmation. Promotion re-fetches every selected message through the private connector boundary, stores stable source IDs and content hashes, and copies bounded text excerpts into canonical evidence. An unavailable or previously promoted message fails closed. Events default to `uncertain` and enter the Detective queue; message timestamps are evidence dates and are not assumed to be event dates.
+Search results remain connector-owned until the final confirmation. Promotion re-fetches every selected message through the connector boundary, stores stable source IDs and content hashes, and copies bounded text excerpts into canonical evidence. An unavailable or previously promoted message fails closed. Events default to `uncertain` and enter the Detective queue; message timestamps are evidence dates and are not assumed to be event dates.
+
+If the connector is switched off or the archive app is stopped, evidence search and promotion report that plainly and nothing else in Life Atlas is affected.

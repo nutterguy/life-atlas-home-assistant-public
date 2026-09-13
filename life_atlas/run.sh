@@ -7,16 +7,9 @@ export LIFE_ATLAS_PORT=8099
 export LIFE_ATLAS_BACKEND_PORT=8100
 export LIFE_ATLAS_SERVER_ONLY=true
 export LIFE_ATLAS_SEED_SAMPLE=true
-export LIFE_ATLAS_VERSION=0.15.0
+export LIFE_ATLAS_VERSION=0.16.0
 export LIFE_ATLAS_REFERENCE_CONNECTOR_URL="${LIFE_ATLAS_REFERENCE_CONNECTOR_URL:-http://local-life-atlas-reference-connector:8098}"
-export LIFE_ATLAS_WHATSAPP_DATA=/data/whatsapp
 export LIFE_ATLAS_OPTIONS_FILE=/data/options.json
-export LIFE_ATLAS_WHATSAPP_CONNECTOR_URL=http://127.0.0.1:8097
-export LIFE_ATLAS_WHATSAPP_CONNECTOR_KEY_FILE=/data/whatsapp/secrets/connector-api-key
-export LIFE_ATLAS_WHATSAPP_CONNECTOR_HOST=127.0.0.1
-export LIFE_ATLAS_WHATSAPP_CONNECTOR_PORT=8097
-export LIFE_ATLAS_WHATSAPP_MANAGEMENT_HOST=127.0.0.1
-export LIFE_ATLAS_WHATSAPP_MANAGEMENT_PORT=8110
 export PYTHONDONTWRITEBYTECODE=1
 
 read_option() {
@@ -69,19 +62,6 @@ unset google_client_id google_client_secret google_redirect_uri
 : "${GOOGLE_REDIRECT_URI:=http://localhost:3000/auth/callback}"
 export GOOGLE_REDIRECT_URI
 
-python3 /opt/life-atlas/whatsapp_archive/secrets_init.py
-WAHA_INTERNAL_API_KEY="$(tr -d '\r\n' < /data/whatsapp/secrets/waha-api-key-hash)"
-export WHATSAPP_API_KEY="$WAHA_INTERNAL_API_KEY"
-export WHATSAPP_DEFAULT_ENGINE=NOWEB
-export WAHA_LOCAL_STORE_BASE_DIR=/data/whatsapp/waha
-export WAHA_DASHBOARD_ENABLED=false
-export WHATSAPP_SWAGGER_ENABLED=false
-export WAHA_APPS_ENABLED=false
-export WAHA_RUN_XVFB=false
-export WAHA_LOG_LEVEL=warn
-export WHATSAPP_API_PORT=3001
-export WHATSAPP_API_HOSTNAME=127.0.0.1
-
 wait_for_backend() {
   python3 - "$LIFE_ATLAS_BACKEND_PORT" <<'PYTHON'
 import socket
@@ -113,24 +93,9 @@ terminate_children() {
   if [ -n "${MCP_PID:-}" ]; then
     kill "$MCP_PID" 2>/dev/null || true
   fi
-  if [ -n "${WHATSAPP_PID:-}" ]; then
-    kill "$WHATSAPP_PID" 2>/dev/null || true
-  fi
-  if [ -n "${WAHA_PID:-}" ]; then
-    kill "$WAHA_PID" 2>/dev/null || true
-  fi
 }
 
 trap terminate_children INT TERM EXIT
-
-cd /app
-/entrypoint.sh &
-WAHA_PID=$!
-unset WAHA_INTERNAL_API_KEY WHATSAPP_API_KEY
-
-cd /opt/life-atlas/whatsapp_archive
-python3 adapter.py &
-WHATSAPP_PID=$!
 
 cd "$MCP_DIR"
 (
@@ -196,22 +161,6 @@ while true; do
     break
   fi
 
-  if ! kill -0 "$WHATSAPP_PID" 2>/dev/null; then
-    wait "$WHATSAPP_PID"
-    status=$?
-    [ "$status" -eq 0 ] && status=1
-    echo "WhatsApp archive adapter stopped unexpectedly; stopping Life Atlas." >&2
-    break
-  fi
-
-  if ! kill -0 "$WAHA_PID" 2>/dev/null; then
-    wait "$WAHA_PID"
-    status=$?
-    [ "$status" -eq 0 ] && status=1
-    echo "WAHA stopped unexpectedly; stopping Life Atlas." >&2
-    break
-  fi
-
   sleep 2
 done
 
@@ -221,6 +170,4 @@ wait "$PROXY_PID" 2>/dev/null || true
 wait "$APP_PID" 2>/dev/null || true
 wait "$AGENT_PID" 2>/dev/null || true
 wait "$MCP_PID" 2>/dev/null || true
-wait "$WHATSAPP_PID" 2>/dev/null || true
-wait "$WAHA_PID" 2>/dev/null || true
 exit "$status"

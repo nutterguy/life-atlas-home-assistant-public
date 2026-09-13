@@ -66,7 +66,7 @@ Liveness plus a cheap integrity check. Safe to poll.
 ```json
 {
   "status": "ok",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "schema_version": 2,
   "database": "ok",
   "counts": {"events": 6, "people": 1, "places": 5, "trips": 1},

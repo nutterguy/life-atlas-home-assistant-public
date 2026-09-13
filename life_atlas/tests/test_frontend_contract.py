@@ -17,6 +17,7 @@ class FrontendContractTests(unittest.TestCase):
             for path in sorted((ROOT / "static").glob("*.css"))
         )
         cls.photos = (ROOT / "static" / "photo-tools.js").read_text(encoding="utf-8")
+        cls.connectors = (ROOT / "static" / "connector-tools.js").read_text(encoding="utf-8")
         cls.dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         cls.run_script = (ROOT / "run.sh").read_text(encoding="utf-8")
         cls.config = (ROOT / "config.yaml").read_text(encoding="utf-8")
@@ -35,7 +36,7 @@ class FrontendContractTests(unittest.TestCase):
             self.assertTrue(asset.endswith(f"?v={version}"), asset)
 
     def test_every_primary_view_is_registered(self):
-        for view in ("home", "timeline", "diary", "years", "map", "people", "trips", "review", "stats"):
+        for view in ("home", "timeline", "diary", "years", "map", "people", "trips", "review", "stats", "sources"):
             self.assertIn(f"{view}:", self.script)
 
     def test_whatsapp_evidence_flow_is_explicit_and_reviewed(self):
@@ -118,7 +119,7 @@ class FrontendContractTests(unittest.TestCase):
         a function by capturing it first is a different, deliberate pattern and is
         unaffected by this rule.
         """
-        for path in ("app.js", "photo-tools.js", "restore-tools.js"):
+        for path in ("app.js", "photo-tools.js", "restore-tools.js", "connector-tools.js"):
             source = (ROOT / "static" / path).read_text(encoding="utf-8")
             names = re.findall(r"^(?:async )?function ([A-Za-z0-9_]+)", source, re.MULTILINE)
             duplicates = sorted({name for name in names if names.count(name) > 1})
@@ -246,7 +247,6 @@ class FrontendContractTests(unittest.TestCase):
         self.assertNotIn("3000/tcp", self.config)
         self.assertIn('PORT="${GOOGLE_PHOTOS_MCP_PORT:-3000}" \\', self.run_script)
         self.assertNotIn('export PORT=', self.run_script)
-        self.assertIn("WHATSAPP_API_PORT=3001", self.run_script)
         self.assertIn("LIFE_ATLAS_BACKEND_PORT=8100", self.run_script)
         self.assertIn("mcp_ingress_proxy.py", self.dockerfile)
 
@@ -292,14 +292,22 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('/data/options.json', self.run_script)
         self.assertNotIn('bashio::config', self.run_script)
 
-    def test_whatsapp_archive_is_ingress_relative_and_not_lan_exposed(self):
-        self.assertIn('id="whatsapp"', self.html)
-        self.assertIn("window.location.assign('whatsapp/')", self.script)
+    def test_the_whatsapp_archive_runs_outside_life_atlas(self):
+        """The archive is a separate app reached only over the connector protocol.
+
+        Life Atlas must not ship WAHA, run the archive adapter, publish its
+        port, or proxy its management interface. It holds a registration, and
+        nothing else.
+        """
+        self.assertNotIn("waha", self.dockerfile.lower())
+        self.assertNotIn("whatsapp", self.dockerfile.lower())
+        self.assertNotIn("whatsapp", self.run_script.lower())
+        self.assertNotIn("whatsapp", self.config.lower())
         self.assertNotIn("8097/tcp", self.config)
         self.assertNotIn("3000/tcp", self.config)
-        self.assertIn("LIFE_ATLAS_WHATSAPP_MANAGEMENT_HOST=127.0.0.1", self.run_script)
-        self.assertIn("whatsapp_archive/adapter.py", self.dockerfile)
         self.assertNotIn('hassio_api: true', self.config)
+        proxy = (ROOT / "mcp_ingress_proxy.py").read_text(encoding="utf-8")
+        self.assertNotIn("whatsapp", proxy.lower())
 
     def test_restore_database_uses_ingress_relative_chunked_workflow(self):
         restore = (ROOT / "static" / "restore-tools.js").read_text(encoding="utf-8")
@@ -317,6 +325,40 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("Type <b>RESTORE</b>", restore)
         self.assertIn("backup: cold", self.config)
         self.assertIn("restore_service.py", self.dockerfile)
+
+    def test_sources_view_lists_switches_and_inspects_each_connector(self):
+        """Every connector must be visible, switchable and inspectable on its own."""
+        self.assertIn("['sources','Sources']", self.script)
+        self.assertIn("sources:svgIcon", self.script)
+        self.assertIn('id="connector-dialog"', self.html)
+        for contract in ("loadConnectors", "connectorCard", "setConnectorEnabled", "connector-search"):
+            self.assertIn(contract, self.connectors)
+        for action in ('data-connector-action="toggle"', 'data-connector-action="probe"',
+                       'data-connector-action="edit"', 'data-connector-action="refresh"'):
+            self.assertIn(action, self.connectors)
+        self.assertIn(".connector-switch", self.css)
+
+    def test_connector_state_is_not_signalled_by_colour_alone(self):
+        """A dot alone fails anyone who cannot separate its hues."""
+        for state in ("available", "degraded", "unavailable", "auth_required",
+                      "incompatible", "disabled", "unknown"):
+            self.assertIn(f"{state}:[", self.connectors)
+
+    def test_a_connector_key_is_never_rendered_back_into_the_page(self):
+        """The API returns has_key, never the key, and the form must not invent one."""
+        self.assertIn("c.has_key", self.connectors)
+        self.assertNotIn("value=\"${esc(c.auth_key", self.connectors)
+        self.assertIn('name="auth_key" type="password"', self.connectors)
+
+    def test_connector_data_is_carried_in_data_attributes(self):
+        offenders = re.findall(r'on[a-z]+="[^"]*\$\{esc\([^"]*"', self.connectors)
+        self.assertEqual(offenders, [], f"data interpolated into an inline handler: {offenders}")
+        self.assertIn("closest('[data-connector-action]')", self.connectors)
+
+    def test_container_and_page_ship_the_connector_registry(self):
+        self.assertIn("connector_registry.py", self.dockerfile)
+        self.assertIn("connector-tools.js", self.html)
+        self.assertIn("connectors.css", self.html)
 
     def test_people_management_has_edit_merge_preview_and_confirmation(self):
         for contract in ("openPersonEditor", "openPersonMerge", "loadMergePreview", "confirmPersonMerge"):

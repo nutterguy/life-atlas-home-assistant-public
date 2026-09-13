@@ -16,6 +16,10 @@ This private repository is the canonical source for the Home Assistant edition. 
 - Preserve Home Assistant authentication. A person signs in only through Home Assistant; never add a second user login, account system, or password prompt, and do not request Home Assistant API permissions without an explicit requirement.
 - The agent API on port 8096 is a machine credential, not a user login: it authenticates automated clients that cannot hold an Ingress browser session. It must stay bearer-key only, fail closed when unset, and never gain an interactive sign-in, session cookie, or account of its own. The browser interface must keep using Ingress and must never authenticate through it.
 - Durable state belongs only under `/data`.
+- Connector registration lives in `/data/connectors.sqlite3`, never in `life_atlas.sqlite3`. Connector addresses and keys must not enter the canonical database, a backup archive, the CSV export, or any snapshot shared with the Windows edition.
+- A connector key is write-only across the API: return `has_key`, never the key itself, and never write one to a log.
+- Life Atlas must keep serving the curated record with every connector absent. A connector failure is a state on that connector's row, never an application error.
+- Connector direction is explicit. An inbound connector is probed over Connector Protocol v1; an outbound one has no address and must never be given one.
 - Never commit personal databases, backups, imports, credentials, hostnames, IP addresses, SSH keys, Ingress tokens, or machine-specific paths.
 - Back up the add-on before database replacement or schema migration.
 - Transfer only a consistent SQLite snapshot; never copy live `-wal` or `-shm` files.

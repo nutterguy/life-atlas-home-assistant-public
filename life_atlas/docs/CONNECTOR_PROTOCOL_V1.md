@@ -20,6 +20,18 @@ The protocol major version is `1`. Breaking changes require a new major version.
 
 The protocol does not require TLS on a private Home Assistant app-to-app network. TLS is required if a connector is intentionally exposed across an untrusted network. Connector services should not be exposed to the LAN or Internet unless there is a specific operational requirement.
 
+## Authentication
+
+The protocol does not require a credential, but a connector may demand one. When Life Atlas holds a connector key for a registration it sends that key on every request as:
+
+```text
+X-Life-Atlas-Connector-Key: <key>
+```
+
+A connector that requires a key and does not receive a valid one answers `401` or `403`. Life Atlas maps both to the `auth_required` state rather than to a transport failure, so the Sources view can tell "this connector needs authorising" apart from "this connector is down".
+
+This key is Life Atlas's credential *to* the connector. It is never a provider token, and provider credentials never cross this API in either direction.
+
 ## Endpoints
 
 ### `GET /v1/info`
@@ -229,6 +241,7 @@ The reference mapping is:
 - `404`: unknown endpoint
 - `413`: request exceeds allowed size
 - `415`: wrong request content type
+- `401`/`403`: the Life Atlas connector key is missing or rejected
 - `500`: connector/internal/protocol failure
 - `503`: connector source unavailable
 - `504`: connector source timeout

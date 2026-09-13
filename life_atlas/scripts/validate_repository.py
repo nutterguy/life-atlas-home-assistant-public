@@ -8,12 +8,12 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 required = [
     "AGENTS.md", "CHANGELOG.md", "README.md", "app.py", "agent_api.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "restore_service.py", "schema.sql", "Dockerfile", "run.sh",
-    "config.yaml", "importance.py", "sample-seed.json", "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
+    "config.yaml", "importance.py", "sample-seed.json", "connectors.py", "connector_http.py", "connector_registry.py",
+    "static/connector-tools.js", "docs/CONNECTORS.md", "docs/CONNECTOR_PROTOCOL_V1.md",
+    "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
     "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/SQLITE_RESTORE.md", "docs/DEPLOYMENT.md",
     "dependencies/google-photos-mcp.json", "scripts/update_google_photos_mcp.py", "scripts/promote_race_importance.py",
-    "docs/WHATSAPP.md", "whatsapp_archive/archive.py", "whatsapp_archive/adapter.py",
-    "whatsapp_archive/patch_waha_bind.py", "whatsapp_archive/patch_waha_noweb_sharp.py",
-    "whatsapp_archive/secrets_init.py", "whatsapp_archive/waha_client.py",
+    "docs/WHATSAPP.md",
 ]
 missing = [item for item in required if not (root / item).exists()]
 if missing:
@@ -79,6 +79,15 @@ restore = (root / "restore_service.py").read_text(encoding="utf-8")
 for required_fragment in ("MAX_PACKAGE_EXPANDED_BYTES", "MAX_PACKAGE_RATIO", "_install_media", "content-addressed name"):
     if required_fragment not in restore:
         raise SystemExit(f"Guarded restore ZIP validation missing: {required_fragment}")
+
+registry = (root / "connector_registry.py").read_text(encoding="utf-8")
+if "REGISTRY_FILENAME" not in registry or "connectors.sqlite3" not in registry:
+    raise SystemExit("The connector registry must keep its own store outside the canonical database")
+_public = registry.split("def _public", 1)[1].split(chr(10) + "def ", 1)[0]
+if '"auth_key":' in _public:
+    raise SystemExit("A connector key must never be returned over the API")
+if "connectors" in (root / "schema.sql").read_text(encoding="utf-8"):
+    raise SystemExit("Connector registration must not enter the Windows-compatible canonical schema")
 
 json.loads((root / "curated-ingest-template.json").read_text(encoding="utf-8"))
 
@@ -166,9 +175,4 @@ for path in tracked:
         )
 
 subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=root, check=True)
-subprocess.run(
-    [sys.executable, "-m", "unittest", "discover", "-s", "whatsapp_archive/tests", "-v"],
-    cwd=root,
-    check=True,
-)
 print("Repository validation: ok")

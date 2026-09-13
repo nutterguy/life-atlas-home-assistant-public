@@ -3,6 +3,14 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.16.0
+
+- Connectors are now plug-ins you manage. The new **Sources** view lists every connector as a card: switch it on or off, see its state, address and versions, check it on demand, and search its archive without promoting anything. Adding a connector no longer needs a code change.
+- The WhatsApp archive is a separate Home Assistant app again, installed from the Life Atlas Connectors repository. Life Atlas no longer bundles the WAHA bridge, so a WhatsApp problem can no longer stop the timeline, and the Life Atlas image is much smaller. Reviewed WhatsApp evidence still works exactly as before, through the connector.
+- Connector addresses and the keys Life Atlas holds for them are stored in `/data/connectors.sqlite3`, separate from your life record, so they never enter a backup, a CSV export or a snapshot moved between editions. A key is write-only and is never shown again once saved.
+
+**Upgrading from 0.15.x:** install **Life Atlas WhatsApp Archive** from the Life Atlas Connectors repository, pair it, then paste its connector key into **Sources → WhatsApp archive** in Life Atlas and switch the connector on. The previous in-app pairing and archive do not transfer, so the device needs linking again.
+
 ## 0.15.0
 
 - Added a five-stage WhatsApp evidence workflow inside Life Atlas: search the durable archive, select messages, draft and review an event, then explicitly create it with immutable evidence excerpts.

@@ -20,6 +20,8 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
+import connector_registry
+from connector_registry import RegistryError
 from media_store import decode_data_url, delete_media, media_file, store_image
 from restore_service import (APPLICATION_ID, SCHEMA_VERSION, MaintenanceBusy,
                              RequestGate, RestoreError, RestoreManager)
@@ -28,7 +30,6 @@ from google_photos_picker import (configure_web as configure_google_photos,
                                   disconnect_web as disconnect_google_photos,
                                   poll_session as poll_picker_session,
                                   web_status as google_photos_status)
-from connector_runtime import make_whatsapp_client
 from connectors import ConnectorError
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
@@ -61,6 +62,7 @@ def initialise():
     IMPORTS.mkdir(exist_ok=True)
     BACKUPS.mkdir(exist_ok=True)
     MEDIA.mkdir(exist_ok=True)
+    connector_registry.initialise(DATA)
     restore_manager().initialise()
     seed_sample = os.environ.get("LIFE_ATLAS_SEED_SAMPLE", "false").lower() == "true"
     with closing(connect()) as con, con:
@@ -484,6 +486,19 @@ def save_event(payload):
         return cur.lastrowid
 
 
+WHATSAPP_CONNECTOR_ID = "whatsapp_archive"
+
+
+def make_whatsapp_client():
+    """Reach the WhatsApp archive through its registration.
+
+    The archive is a separate Home Assistant app. Its address and the key Life
+    Atlas holds for it belong to the connector registry, so it can be installed,
+    moved, re-keyed or switched off without touching Life Atlas.
+    """
+    return connector_registry.client_for(DATA, WHATSAPP_CONNECTOR_ID)
+
+
 def whatsapp_search(query, *, limit=50, cursor=None):
     query = str(query or "").strip()
     if not query:
@@ -801,6 +816,13 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(poll_picker_session(DATA, connect, route.rsplit("/", 1)[1]))
             except ValueError as exc:
                 return self.send_json({"error": str(exc)}, 400)
+        if route == "/api/connectors":
+            return self.send_json({"connectors": connector_registry.list_connectors(DATA)})
+        if route.startswith("/api/connectors/"):
+            try:
+                return self.send_json(connector_registry.get_connector(DATA, route.rsplit("/", 1)[1]))
+            except RegistryError as exc:
+                return self.send_json({"error": str(exc)}, 404)
         if route == "/api/health": return self.send_json({"status": "ok"})
         if route == "/api/export":
             target = export_csv()
@@ -857,6 +879,12 @@ class Handler(SimpleHTTPRequestHandler):
                 if route == "/api/google-photos/picker":
                     token = str(payload.pop("access_token", ""))
                     return self.send_json(create_picker_session(DATA, payload, access_token=token), 201)
+                if route == "/api/connectors":
+                    return self.send_json(connector_registry.save_connector(DATA, payload), 201)
+                if route == "/api/connectors/refresh":
+                    return self.send_json({"connectors": connector_registry.probe_all(DATA)})
+                if route.startswith("/api/connectors/"):
+                    return self._connector_action(route, payload)
                 if route.startswith("/api/review/"):
                     item_id = int(route.rsplit("/", 1)[1])
                     resolve_review(item_id, payload.get("outcome"))
@@ -866,6 +894,31 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"error": str(exc)}, 503)
         except Exception as exc:
             return self.send_json({"error": str(exc)}, 400)
+
+    def _connector_action(self, route, payload):
+        """Act on one registered connector.
+
+        A connector's own failure is reported as that connector's state, so only
+        a bad *registration* answers with an error status here.
+        """
+        parts = route.strip("/").split("/")
+        if len(parts) != 4:
+            return self.send_json({"error": "Not found"}, 404)
+        connector_id, action = parts[2], parts[3]
+        try:
+            if action == "enable":
+                return self.send_json(connector_registry.set_enabled(DATA, connector_id, True))
+            if action == "disable":
+                return self.send_json(connector_registry.set_enabled(DATA, connector_id, False))
+            if action == "probe":
+                return self.send_json(connector_registry.probe(DATA, connector_id))
+            if action == "search":
+                return self.send_json(connector_registry.search(DATA, connector_id, payload.get("query", "")))
+            if action == "delete":
+                return self.send_json(connector_registry.delete_connector(DATA, connector_id))
+        except RegistryError as exc:
+            return self.send_json({"error": str(exc)}, 400)
+        return self.send_json({"error": "Not found"}, 404)
 
     def _restore_post(self, parsed, route):
         try:

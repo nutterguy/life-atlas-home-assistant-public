@@ -25,6 +25,10 @@ class ConnectorProtocolError(ConnectorError):
     pass
 
 
+class ConnectorAuthRequired(ConnectorError):
+    """The connector rejected the Life Atlas connector key, or has none configured."""
+
+
 class UnsupportedCapability(ConnectorError):
     pass
 

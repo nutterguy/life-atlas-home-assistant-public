@@ -12,8 +12,10 @@ Life Atlas is a private, single-user life timeline packaged as a Home Assistant 
 - `docs/CHATGPT_INGESTION.md`: safe data synchronization workflow
 - `docs/DEPLOYMENT.md`: clean installation, updates, verification, and recovery
 - `docs/GOOGLE_PHOTOS.md`: Google Photos Picker setup, privacy, and removal
-- `docs/WHATSAPP.md`: read-only WhatsApp pairing, chat selection, storage, and backup
+- `docs/WHATSAPP.md`: installing the separate WhatsApp archive app and connecting it to Life Atlas
 - `docs/AGENT_API.md`: the bearer-key HTTP API for machine clients such as ChatGPT
+- `docs/CONNECTORS.md`: the connector plug-in architecture, direction model and registry
+- `docs/CONNECTOR_PROTOCOL_V1.md`: the wire contract Life Atlas speaks to inbound connectors
 
 Run `python scripts/validate_repository.py` after cloning and before deployment. The repository intentionally contains no computer-specific address, credential, or personal database.
 The same validation runs automatically on GitHub for pushes and pull requests.
@@ -26,7 +28,8 @@ The same validation runs automatically on GitHub for pushes and pull requests.
 - Evidence, sources, external links and media metadata
 - Local photo uploads for events, diary days, and people portraits
 - Google Photos Picker for explicitly selecting an event, diary day, or person photo
-- Read-only WhatsApp history and ongoing capture with explicit per-chat archive selection
+- Reviewed WhatsApp evidence: search the archive app, choose the messages that support an event, then create it explicitly
+- Sources view: register, switch on and off, check and inspect each connector plug-in
 - Statistics and a review queue for uncertain events
 - Event creation
 - Downloadable backup archive, guarded SQLite restore, and CSV export
@@ -45,13 +48,12 @@ The application stores all durable state in `/data`, the persistent data directo
 
 ```text
 /data/life_atlas.sqlite3
+/data/connectors.sqlite3
 /data/imports/
 /data/backups/
 /data/media/
 /data/restore-backups/
 /data/restore-staging/
-/data/whatsapp/archive/whatsapp-archive.sqlite3
-/data/whatsapp/waha/
 ```
 
 The SQLite schema is intentionally kept compatible with the Windows edition. **Restore database** accepts either one standalone SQLite snapshot or a guarded Life Atlas ZIP containing `data/life_atlas.sqlite3` and its exact `data/media` tree. A standalone database must match media already under `/data/media`; a package installs only verified content-addressed media files and refuses conflicts. Both paths create an automatic rollback database before replacing records. Follow `docs/SQLITE_RESTORE.md` for the complete preparation, validation, restore, verification, troubleshooting, and rollback procedure. The **Back up** button downloads a ZIP containing the database, imports, and local media; **Export CSV** downloads the event timeline as CSV. Google Photos Picker is available in both editions. Home Assistant keeps its short-lived Google access token only in browser memory and immediately saves the selected photo locally.
@@ -79,7 +81,8 @@ Home Assistant-specific behaviour is limited to `config.yaml`, `Dockerfile`, and
 - Access through Home Assistant is protected by Home Assistant Ingress.
 - The app requests no Home Assistant API access and no host networking.
 - No telemetry or cloud service is used.
+- Connectors are switched off until you switch them on. Registration keeps each connector's address and key in `/data/connectors.sqlite3`, never in the life record, and the key is never shown again once saved.
 - Google Photos is contacted only when you explicitly connect or choose a photo. The access token is not written to the add-on data directory.
-- WhatsApp is linked only when you scan the QR code. Its internal key explicitly denies sending, and only chats approved in the archive screen are copied into the durable backed-up archive.
+- WhatsApp lives in its own app, **Life Atlas WhatsApp Archive**, installed separately from the Life Atlas Connectors repository. It holds its own pairing state and archive in its own `/data`; Life Atlas reaches it only over Connector Protocol v1, and only while the connector is switched on in **Sources**.
 - The optional Places map loads Leaflet and, for its dark basemap tiles, Esri's keyless World Dark Gray Canvas service over the internet. No API key or account is involved and no Life Atlas data leaves the machine; the map requests only the tile images for the area on screen.
 - SQLite data is not encrypted by the app; rely on secured Home Assistant access and encrypted backups where appropriate.

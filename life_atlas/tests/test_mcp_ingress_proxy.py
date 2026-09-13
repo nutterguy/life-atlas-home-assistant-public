@@ -61,44 +61,6 @@ class GooglePhotosMcpProxyTests(unittest.TestCase):
         self.assertEqual(status["health"], "unhealthy")
         self.assertFalse(status["authenticated"])
 
-    def test_whatsapp_management_routes_are_prefix_stripped(self):
-        handler = object.__new__(proxy.ProxyHandler)
-        handler.path = "/whatsapp/manage/status?fresh=1"
-        handler.command = "GET"
-        handler.relay = mock.Mock()
-        handler.redirect = mock.Mock()
-        handler.send_json = mock.Mock()
-
-        handler.handle_request()
-
-        handler.relay.assert_called_once_with(
-            proxy.WHATSAPP_MANAGEMENT_PORT, "/manage/status?fresh=1"
-        )
-
-    def test_whatsapp_connector_key_is_not_exposed_through_ingress(self):
-        handler = object.__new__(proxy.ProxyHandler)
-        handler.path = "/whatsapp/manage/connector-key"
-        handler.command = "GET"
-        handler.relay = mock.Mock()
-        handler.redirect = mock.Mock()
-        handler.send_json = mock.Mock()
-
-        handler.handle_request()
-
-        handler.relay.assert_not_called()
-        handler.send_json.assert_called_once_with(
-            {"error": "Connector credentials are internal to Life Atlas"}, 404
-        )
-
-        handler.path = "/whatsapp/manage/connector-key?anything=1"
-        handler.relay.reset_mock()
-        handler.send_json.reset_mock()
-        handler.handle_request()
-        handler.relay.assert_not_called()
-        handler.send_json.assert_called_once_with(
-            {"error": "Connector credentials are internal to Life Atlas"}, 404
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

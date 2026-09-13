@@ -9,7 +9,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from connectors import ConnectorProtocolError, ConnectorTimeout, ConnectorUnavailable
+from connectors import (ConnectorAuthRequired, ConnectorProtocolError, ConnectorTimeout,
+                        ConnectorUnavailable)
 
 PROTOCOL_PREFIX = "/v1"
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -81,6 +82,8 @@ class HTTPConnectorTransport:
             detail = _error_detail(raw)
             if exc.code == 504:
                 raise ConnectorTimeout(detail or "Connector HTTP 504") from exc
+            if exc.code in (401, 403):
+                raise ConnectorAuthRequired(detail or f"Connector HTTP {exc.code}") from exc
             if exc.code in (502, 503):
                 raise ConnectorUnavailable(detail or f"Connector HTTP {exc.code}") from exc
             raise ConnectorProtocolError(detail or f"Connector HTTP {exc.code}") from exc

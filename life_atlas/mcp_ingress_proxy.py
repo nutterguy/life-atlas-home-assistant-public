@@ -12,7 +12,6 @@ APP_HOST = "127.0.0.1"
 APP_PORT = int(os.environ.get("LIFE_ATLAS_BACKEND_PORT", "8100"))
 MCP_HOST = "127.0.0.1"
 MCP_PORT = int(os.environ.get("GOOGLE_PHOTOS_MCP_PORT", "3000"))
-WHATSAPP_MANAGEMENT_PORT = int(os.environ.get("LIFE_ATLAS_WHATSAPP_MANAGEMENT_PORT", "8110"))
 PROXY_HOST = os.environ.get("LIFE_ATLAS_HOST", "0.0.0.0")
 PROXY_PORT = int(os.environ.get("LIFE_ATLAS_PORT", "8099"))
 TOKEN_DB = Path(os.environ.get("LIFE_ATLAS_DATA_DIR", "/data")) / "google-photos-mcp" / "tokens.db"
@@ -121,15 +120,6 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if route == "/api/google-photos-mcp/auth/callback" and self.command == "GET":
             target = "/auth/callback" + (f"?{parsed.query}" if parsed.query else "")
             return self.relay(MCP_PORT, target)
-        if route == "/whatsapp":
-            return self.redirect("whatsapp/")
-        if route.startswith("/whatsapp/"):
-            target = route[len("/whatsapp") :] or "/"
-            if target == "/manage/connector-key":
-                return self.send_json({"error": "Connector credentials are internal to Life Atlas"}, 404)
-            if parsed.query:
-                target += f"?{parsed.query}"
-            return self.relay(WHATSAPP_MANAGEMENT_PORT, target)
         return self.relay(APP_PORT, self.path)
 
     do_GET = handle_request

@@ -2,13 +2,46 @@
 
 ## Status
 
-This document defines the architectural contract for external Life Atlas data connectors. It is intentionally implementation-neutral. Runtime connector support, schemas, Home Assistant packaging, and individual connectors are introduced in later changes.
+This document defines the architectural contract for external Life Atlas connectors. The connector registry, the Sources management view, and Connector Protocol v1 are implemented; individual real connectors are introduced separately.
 
 The core rule is:
 
 > Life Atlas owns the curated life record. Connectors own complete source-system archives.
 
 Life Atlas may keep durable copies of selected source evidence when that evidence has lasting value. It must not mirror entire source systems into the canonical database by default.
+
+## Connectors are plug-ins
+
+A connector is a wholly separate, independently deployed service. Life Atlas holds only its registration, and every connector can be added, addressed, switched on and off, checked and inspected from **Sources** without a Life Atlas code change. Nothing about an individual source belongs in Life Atlas core.
+
+Life Atlas keeps working with every connector absent. A connector that is missing, unauthenticated, incompatible or broken becomes a state on its own row and changes nothing else.
+
+## Direction
+
+A connector is not necessarily a one-way feed. Each registration declares its direction:
+
+| Kind | Meaning | How Life Atlas talks to it |
+| --- | --- | --- |
+| `source` | The connector feeds Life Atlas | Life Atlas calls the connector's Connector Protocol v1 endpoints |
+| `consumer` | The connector reads the curated record out of Life Atlas | The connector calls the Life Atlas agent API with a bearer key; Life Atlas never calls it |
+| `bidirectional` | Both of the above | Both paths, each with its own credential |
+
+The ChatGPT bridge is the first `consumer`: it takes curated events, people and evidence *out* of Life Atlas for an AI client. A future revision of it that also returned material to Life Atlas would become `bidirectional` without changing its registration model.
+
+Direction decides what a status check can mean. An inbound connector is probed: Life Atlas asks it for `/v1/info`, `/v1/status` and `/v1/capabilities`. An outbound connector has no address and is never probed — Life Atlas has no way to reach a client and must not acquire one — so its honest status is whether the credential it authenticates with exists.
+
+Read-only remains the default for inbound source connectors. Outbound access is separately bounded by what the agent API itself exposes; a `consumer` registration grants no new capability, it only makes an existing access path visible and switchable.
+
+## The registry
+
+Registration lives in `/data/connectors.sqlite3`, deliberately not in `life_atlas.sqlite3`. Two reasons:
+
+- `schema.sql` stays compatible with the Windows edition, which has no connectors;
+- machine-specific addresses and connector keys stay out of the canonical database, its backups, its CSV export, and any snapshot transferred between editions.
+
+A registration holds the connector identity, name, direction, address, Life Atlas's own credential to that connector, the on/off switch, notes, the sync cursor, and the last observed status. The connector key is write-only over the API: responses carry `has_key`, never the key. Saving a connector without the key field keeps the stored key; saving it with an empty string clears it deliberately.
+
+Changing a connector's address, credential or direction discards its cached status, because that status described a configuration that no longer exists.
 
 ## Goals
 
@@ -57,6 +90,7 @@ The first intended proof connectors are Google Photos and WhatsApp. Their source
 ### Life Atlas owns
 
 - `life_atlas.sqlite3`;
+- the connector registry in `/data/connectors.sqlite3`;
 - curated events, people, places, trips, chapters, relationships, tags, and review state;
 - source-neutral provenance records;
 - durable promoted text evidence;
@@ -357,7 +391,7 @@ The agreed implementation order is:
 13. add shared identity resolution;
 14. add selective media promotion;
 15. add source-neutral AI extraction and review;
-16. add source/connector management UI;
+16. add source/connector management UI (**done**: registry, `/api/connectors`, Sources view);
 17. expose unified ChatGPT-facing Life Atlas retrieval rather than broad source credentials;
 18. add upstream update monitoring and contract-gated upgrades;
 19. execute the full failure matrix;

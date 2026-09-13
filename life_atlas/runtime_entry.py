@@ -1,29 +1,30 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import app as life_atlas
-from connector_runtime import reference_connector_diagnostic, whatsapp_connector_diagnostic
 
 APP_VERSION = os.environ.get("LIFE_ATLAS_VERSION", "0.6.1")
-_ORIGINAL_DO_GET = life_atlas.Handler.do_GET
+# Reloading this module must not wrap an already-wrapped handler: that chains
+# runtime_do_get to itself and every non-health GET recurses until it dies.
+_ORIGINAL_DO_GET = getattr(life_atlas.Handler.do_GET, "life_atlas_original", life_atlas.Handler.do_GET)
 
 
 def runtime_do_get(handler) -> None:
-    parsed = urlparse(handler.path)
-    route = parsed.path
-    if route == "/api/health":
+    """Only health is answered here.
+
+    Connectors used to be a single hard-coded diagnostic route at this layer.
+    They are now registered records served by the application itself, so that a
+    connector can be added, addressed, switched off and inspected without a code
+    change. Nothing connector-specific belongs in the runtime wrapper.
+    """
+    if urlparse(handler.path).path == "/api/health":
         return handler.send_json({"status": "ok", "version": APP_VERSION})
-    if route == "/api/connectors/reference":
-        query = parse_qs(parsed.query).get("q", [None])[0]
-        return handler.send_json(reference_connector_diagnostic(query=query))
-    if route == "/api/connectors/whatsapp":
-        query = parse_qs(parsed.query).get("q", [None])[0]
-        return handler.send_json(whatsapp_connector_diagnostic(query=query))
     return _ORIGINAL_DO_GET(handler)
 
 
+runtime_do_get.life_atlas_original = _ORIGINAL_DO_GET
 life_atlas.Handler.do_GET = runtime_do_get
 
 
