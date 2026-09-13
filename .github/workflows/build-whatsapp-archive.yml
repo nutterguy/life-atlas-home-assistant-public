@@ -46,19 +46,16 @@ jobs:
       contents: read
       id-token: write
       packages: write
-    strategy:
-      matrix:
-        arch: [amd64, aarch64]
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: home-assistant/builder/actions/build-image@2026.06.0
         with:
-          arch: ${{ matrix.arch }}
+          arch: amd64
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
           context: ./whatsapp_archive
-          image: ghcr.io/nutterguy/${{ matrix.arch }}-life-atlas-whatsapp-archive
+          image: ghcr.io/nutterguy/amd64-life-atlas-whatsapp-archive
           image-tags: |
             ${{ needs.prepare.outputs.version }}
             latest

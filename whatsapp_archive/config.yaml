@@ -5,7 +5,6 @@ slug: "life_atlas_whatsapp_archive"
 init: false
 arch:
   - amd64
-  - aarch64
 image: "ghcr.io/nutterguy/{arch}-life-atlas-whatsapp-archive"
 startup: services
 boot: auto
