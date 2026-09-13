@@ -39,8 +39,8 @@
 @media(max-width:800px){.connector-list{grid-template-columns:minmax(0,1fr)}}
 
 /* The link sits among the card's buttons and must read as one of them. */
-.connector-actions .connector-link{display:inline-flex;align-items:center;gap:.35rem;text-decoration:none}
-.connector-actions .connector-link:hover{text-decoration:underline}
+.connector-actions .connector-link{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;text-decoration:none;background:var(--panel-strong,#263348);color:var(--text,#fff);border:1px solid var(--line,#46546a);border-radius:10px;padding:.65rem .9rem;font-weight:700}
+.connector-actions .connector-link:hover{background:var(--panel-hover,#334158);text-decoration:none}
 
 /* Someone who has asked their OS for reduced motion gets every state change
    instantly instead of animated (WCAG 2.3.3). This lives at the end of the

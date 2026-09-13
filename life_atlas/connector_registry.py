@@ -563,10 +563,10 @@ def _public(row: sqlite3.Row) -> dict[str, Any]:
         "reads_from_life_atlas": kind in OUTBOUND_KINDS,
         "base_url": row["base_url"],
         "manage_slug": row["manage_slug"],
-        # Home Assistant resolves an app's rotating Ingress token itself, so the
-        # durable link is by slug. Deliberately rooted at the Home Assistant
-        # frontend: this navigates the host, it is not a Life Atlas request.
-        "manage_url": f"/hassio/ingress/{row['manage_slug']}/" if row["manage_slug"] else None,
+        # The Home Assistant frontend route is the app slug itself. Supervisor
+        # resolves that route to the rotating Ingress token; /hassio/ingress/<slug>
+        # is not a valid frontend route and returns 404.
+        "manage_url": f"/{row['manage_slug']}" if row["manage_slug"] else None,
         "has_key": bool(row["auth_key"]),
         "enabled": bool(row["enabled"]),
         "notes": row["notes"],

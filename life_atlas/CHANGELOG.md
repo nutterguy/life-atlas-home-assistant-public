@@ -3,6 +3,11 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.18.1
+
+- Fixed connector web-interface links to use Home Assistant's working app route.
+- Styled the connector web-interface link consistently with the surrounding actions.
+
 ## 0.18.0
 
 - Link a durable WhatsApp conversation to an existing Life Atlas person without

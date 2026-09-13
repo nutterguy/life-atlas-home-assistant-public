@@ -94,7 +94,7 @@ function connectorCard(c){
     ${c.notes?`<p class="connector-notes">${esc(c.notes)}</p>`:''}
     <div class="connector-actions">
       <button data-connector-action="probe">Check now</button>
-      ${c.manage_url?`<a class="connector-link" href="${esc(c.manage_url)}" target="_blank" rel="noopener">Open web UI ↗</a>`:''}
+      ${c.manage_url?`<a class="connector-link button secondary" href="${esc(c.manage_url)}" target="_blank" rel="noopener">Open web UI ↗</a>`:''}
       <button data-connector-action="edit">Configure</button>
       ${c.reads_into_life_atlas?'<button data-connector-action="inspect">Inspect archive</button>':''}
       <button class="danger" data-connector-action="remove">Remove</button>

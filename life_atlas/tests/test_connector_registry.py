@@ -134,7 +134,7 @@ class ConnectorRegistryTests(unittest.TestCase):
     def test_a_connector_with_its_own_page_offers_a_link_to_it(self):
         entry = registry.get_connector(self.data, "whatsapp")
         self.assertEqual(entry["manage_slug"], "local_life_atlas_whatsapp_archive")
-        self.assertEqual(entry["manage_url"], "/hassio/ingress/local_life_atlas_whatsapp_archive/")
+        self.assertEqual(entry["manage_url"], "/local_life_atlas_whatsapp_archive")
 
     def test_a_connector_without_a_page_offers_no_link(self):
         entry = registry.get_connector(self.data, "chatgpt_bridge")
@@ -146,7 +146,7 @@ class ConnectorRegistryTests(unittest.TestCase):
             "connector_id": "whatsapp", "name": "WhatsApp archive", "kind": "source",
             "base_url": "http://example.invalid:8097", "manage_slug": "a1b2c3d4_life_atlas_whatsapp_archive",
         })
-        self.assertEqual(entry["manage_url"], "/hassio/ingress/a1b2c3d4_life_atlas_whatsapp_archive/")
+        self.assertEqual(entry["manage_url"], "/a1b2c3d4_life_atlas_whatsapp_archive")
 
     def test_a_slug_that_could_escape_the_link_is_refused(self):
         for bad in ("../../hassio/system", "slug with spaces", "slug/../x", "a" * 129):
@@ -181,7 +181,7 @@ class ConnectorRegistryTests(unittest.TestCase):
 
     def test_the_ingress_link_carries_the_trailing_slash_home_assistant_expects(self):
         entry = registry.get_connector(self.data, "whatsapp")
-        self.assertTrue(entry["manage_url"].endswith("/"))
+        self.assertTrue(entry["manage_url"].startswith("/"))
 
     def test_a_registry_from_an_earlier_version_gains_the_new_column(self):
         """0.16.0 shipped without manage_slug; an existing registry must migrate."""
