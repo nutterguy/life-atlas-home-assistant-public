@@ -3,6 +3,10 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.16.1
+
+- A connector card in **Sources** now links straight to that connector's own Home Assistant page, so managing one no longer means leaving Life Atlas and finding the app yourself. The link appears once the connector records its app slug; the WhatsApp archive is set up for it already, and the slug is editable under **Configure** because its prefix differs between a locally installed app and a repository-installed one.
+
 ## 0.16.0
 
 - Connectors are now plug-ins you manage. The new **Sources** view lists every connector as a card: switch it on or off, see its state, address and versions, check it on demand, and search its archive without promoting anything. Adding a connector no longer needs a code change.

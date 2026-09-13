@@ -92,6 +92,7 @@ function connectorCard(c){
     ${c.notes?`<p class="connector-notes">${esc(c.notes)}</p>`:''}
     <div class="connector-actions">
       <button data-connector-action="probe">Check now</button>
+      ${c.manage_url?`<a class="connector-link" href="${esc(c.manage_url)}" target="_blank" rel="noopener">Open web UI ↗</a>`:''}
       <button data-connector-action="edit">Configure</button>
       ${c.reads_into_life_atlas?'<button data-connector-action="inspect">Inspect archive</button>':''}
       <button class="danger" data-connector-action="remove">Remove</button>
@@ -163,7 +164,7 @@ document.addEventListener('submit',async e=>{
 });
 
 function openConnectorEditor(entry){
-  const c=entry||{connector_id:'',name:'',kind:'source',base_url:'',notes:'',enabled:false,has_key:false};
+  const c=entry||{connector_id:'',name:'',kind:'source',base_url:'',manage_slug:'',notes:'',enabled:false,has_key:false};
   $('#connector-content').innerHTML=`<h2>${entry?'Configure connector':'Add connector'}</h2>
     <form id="connector-form">
       <input type="hidden" name="existing" value="${entry?'1':''}">
@@ -176,6 +177,7 @@ function openConnectorEditor(entry){
       </select></label>
       <label>Connector Protocol address<input name="base_url" placeholder="http://local-life-atlas-whatsapp-archive:8097" value="${esc(c.base_url)}"></label>
       <label>Connector key${c.has_key?' <span class="muted">(a key is stored; leave blank to keep it)</span>':''}<input name="auth_key" type="password" autocomplete="off" placeholder="${c.has_key?'unchanged':'none'}"></label>
+      <label>Home Assistant app slug <span class="muted">(optional, adds an "Open web UI" link)</span><input name="manage_slug" placeholder="local_life_atlas_whatsapp_archive" value="${esc(c.manage_slug||'')}"></label>
       <label>Notes<textarea name="notes">${esc(c.notes)}</textarea></label>
       <label class="inline"><input type="checkbox" name="enabled"${c.enabled?' checked':''}> Switched on</label>
       <button class="primary" type="submit">Save connector</button>
@@ -192,6 +194,7 @@ async function saveConnector(e){
     name:fd.get('name'),
     kind:fd.get('kind'),
     base_url:fd.get('base_url'),
+    manage_slug:fd.get('manage_slug'),
     notes:fd.get('notes'),
     enabled:fd.has('enabled')
   };

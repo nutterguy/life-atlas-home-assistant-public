@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -128,6 +130,62 @@ class ConnectorRegistryTests(unittest.TestCase):
         entry = registry.set_enabled(self.data, "reference", False)
         self.assertEqual(entry["state"], "disabled")
         self.assertIsNone(entry["last_checked_at"])
+
+    def test_a_connector_with_its_own_page_offers_a_link_to_it(self):
+        entry = registry.get_connector(self.data, "whatsapp_archive")
+        self.assertEqual(entry["manage_slug"], "local_life_atlas_whatsapp_archive")
+        self.assertEqual(entry["manage_url"], "/hassio/ingress/local_life_atlas_whatsapp_archive")
+
+    def test_a_connector_without_a_page_offers_no_link(self):
+        entry = registry.get_connector(self.data, "chatgpt_bridge")
+        self.assertEqual(entry["manage_slug"], "")
+        self.assertIsNone(entry["manage_url"])
+
+    def test_the_app_slug_is_editable_because_its_prefix_depends_on_the_install(self):
+        entry = registry.save_connector(self.data, {
+            "connector_id": "whatsapp_archive", "name": "WhatsApp archive", "kind": "source",
+            "base_url": "http://example.invalid:8097", "manage_slug": "a1b2c3d4_life_atlas_whatsapp_archive",
+        })
+        self.assertEqual(entry["manage_url"], "/hassio/ingress/a1b2c3d4_life_atlas_whatsapp_archive")
+
+    def test_a_slug_that_could_escape_the_link_is_refused(self):
+        for bad in ("../../hassio/system", "slug with spaces", "slug/../x", "a" * 129):
+            with self.assertRaises(registry.RegistryError):
+                registry.save_connector(self.data, {
+                    "connector_id": "reference", "name": "Reference", "kind": "source",
+                    "base_url": "http://example.invalid:8098", "manage_slug": bad,
+                })
+
+    def test_a_registry_from_an_earlier_version_gains_the_new_column(self):
+        """0.16.0 shipped without manage_slug; an existing registry must migrate."""
+        older = self.data / "older"
+        older.mkdir()
+        path = registry.registry_path(older)
+        with closing(sqlite3.connect(path)) as con:
+            con.execute(
+                "CREATE TABLE connectors (connector_id TEXT PRIMARY KEY, name TEXT NOT NULL,"
+                " kind TEXT NOT NULL CHECK(kind IN ('source','consumer','bidirectional')),"
+                " base_url TEXT NOT NULL DEFAULT '', auth_key TEXT NOT NULL DEFAULT '',"
+                " enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),"
+                " notes TEXT NOT NULL DEFAULT '', cursor TEXT NOT NULL DEFAULT '',"
+                " last_state TEXT NOT NULL DEFAULT 'unknown', last_error TEXT NOT NULL DEFAULT '',"
+                " last_checked_at TEXT, last_attempted_sync TEXT, last_successful_sync TEXT,"
+                " last_info_json TEXT NOT NULL DEFAULT '{}',"
+                " last_capabilities_json TEXT NOT NULL DEFAULT '[]',"
+                " created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                " updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
+            con.execute("INSERT INTO connectors(connector_id,name,kind,base_url) "
+                        "VALUES('whatsapp_archive','WhatsApp archive','source','http://x:8097')")
+            con.commit()
+
+        registry.initialise(older)
+
+        entry = registry.get_connector(older, "whatsapp_archive")
+        self.assertEqual(entry["manage_slug"], "")
+        self.assertIsNone(entry["manage_url"])
+        # The existing row survives: migration must not reseed over it.
+        self.assertEqual(entry["base_url"], "http://x:8097")
 
     def test_the_connector_key_is_stored_but_never_returned(self):
         entry = self.register(self.serve(), auth_key="secret-key")

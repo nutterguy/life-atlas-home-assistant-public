@@ -37,3 +37,7 @@
 #connector-form label.inline{flex-direction:row;align-items:center;gap:8px}
 #connector-form input[readonly]{opacity:.6}
 @media(max-width:800px){.connector-list{grid-template-columns:minmax(0,1fr)}}
+
+/* The link sits among the card's buttons and must read as one of them. */
+.connector-actions .connector-link{display:inline-flex;align-items:center;gap:.35rem;text-decoration:none}
+.connector-actions .connector-link:hover{text-decoration:underline}

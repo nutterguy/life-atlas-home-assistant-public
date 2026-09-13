@@ -309,6 +309,18 @@ class FrontendContractTests(unittest.TestCase):
         proxy = (ROOT / "mcp_ingress_proxy.py").read_text(encoding="utf-8")
         self.assertNotIn("whatsapp", proxy.lower())
 
+    def test_a_connector_card_links_to_its_own_home_assistant_page(self):
+        """The link is deliberately rooted at the Home Assistant frontend.
+
+        It navigates the host, so it is not one of the Life Atlas API or asset
+        requests that must stay Ingress-relative.
+        """
+        tools = (ROOT / "static" / "connector-tools.js").read_text(encoding="utf-8")
+        self.assertIn("c.manage_url", tools)
+        self.assertIn('target="_blank"', tools)
+        self.assertIn('rel="noopener"', tools)
+        self.assertIn('name="manage_slug"', tools)
+
     def test_restore_database_uses_ingress_relative_chunked_workflow(self):
         restore = (ROOT / "static" / "restore-tools.js").read_text(encoding="utf-8")
         self.assertIn('id="restore"', self.html)

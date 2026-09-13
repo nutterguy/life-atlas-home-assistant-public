@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS connectors (
   name TEXT NOT NULL,
   kind TEXT NOT NULL CHECK(kind IN ('source','consumer','bidirectional')),
   base_url TEXT NOT NULL DEFAULT '',
+  manage_slug TEXT NOT NULL DEFAULT '',
   auth_key TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
   notes TEXT NOT NULL DEFAULT '',
@@ -77,6 +79,7 @@ BUILT_IN = (
         "name": "WhatsApp archive",
         "kind": "source",
         "base_url": "http://local-life-atlas-whatsapp-archive:8097",
+        "manage_slug": "local_life_atlas_whatsapp_archive",
         "notes": "Read-only WhatsApp ingress. Paste its connector key from the add-on's own page.",
     },
     {
@@ -108,6 +111,7 @@ def initialise(data_dir: Path) -> None:
     Path(data_dir).mkdir(parents=True, exist_ok=True)
     with closing(connect(data_dir)) as con, con:
         con.executescript(SCHEMA)
+        _add_missing_columns(con)
         if con.execute("SELECT COUNT(*) FROM connectors").fetchone()[0]:
             return
         for entry in BUILT_IN:
@@ -115,9 +119,23 @@ def initialise(data_dir: Path) -> None:
             if entry["connector_id"] == "reference":
                 base_url = os.environ.get("LIFE_ATLAS_REFERENCE_CONNECTOR_URL", base_url)
             con.execute(
-                "INSERT INTO connectors(connector_id,name,kind,base_url,notes,enabled) VALUES(?,?,?,?,?,0)",
-                (entry["connector_id"], entry["name"], entry["kind"], base_url.rstrip("/"), entry["notes"]),
+                "INSERT INTO connectors(connector_id,name,kind,base_url,manage_slug,notes,enabled)"
+                " VALUES(?,?,?,?,?,?,0)",
+                (entry["connector_id"], entry["name"], entry["kind"], base_url.rstrip("/"),
+                 entry.get("manage_slug", ""), entry["notes"]),
             )
+
+
+def _add_missing_columns(con: sqlite3.Connection) -> None:
+    """Bring a registry created by an earlier version up to the current shape.
+
+    CREATE TABLE IF NOT EXISTS leaves an existing table alone, so a column added
+    later has to be added explicitly or every query against it fails.
+    """
+    have = {row["name"] for row in con.execute("PRAGMA table_info(connectors)")}
+    for column, definition in (("manage_slug", "TEXT NOT NULL DEFAULT ''"),):
+        if column not in have:
+            con.execute(f"ALTER TABLE connectors ADD COLUMN {column} {definition}")
 
 
 def list_connectors(data_dir: Path) -> list[dict[str, Any]]:
@@ -143,6 +161,7 @@ def save_connector(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     name = str(payload.get("name") or connector_id).strip() or connector_id
     base_url = str(payload.get("base_url") or "").strip().rstrip("/")
     notes = str(payload.get("notes") or "").strip()
+    manage_slug = _manage_slug(payload.get("manage_slug"))
     enabled = 1 if _flag(payload.get("enabled"), default=False) else 0
 
     if kind in INBOUND_KINDS and not base_url:
@@ -160,14 +179,15 @@ def save_connector(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
             auth_key = existing["auth_key"] if existing else ""
         con.execute(
             """
-            INSERT INTO connectors(connector_id,name,kind,base_url,auth_key,enabled,notes)
-            VALUES(?,?,?,?,?,?,?)
+            INSERT INTO connectors(connector_id,name,kind,base_url,manage_slug,auth_key,enabled,notes)
+            VALUES(?,?,?,?,?,?,?,?)
             ON CONFLICT(connector_id) DO UPDATE SET
               name=excluded.name, kind=excluded.kind, base_url=excluded.base_url,
-              auth_key=excluded.auth_key, enabled=excluded.enabled, notes=excluded.notes,
+              manage_slug=excluded.manage_slug, auth_key=excluded.auth_key,
+              enabled=excluded.enabled, notes=excluded.notes,
               updated_at=CURRENT_TIMESTAMP
             """,
-            (connector_id, name, kind, base_url, auth_key, enabled, notes),
+            (connector_id, name, kind, base_url, manage_slug, auth_key, enabled, notes),
         )
         # Address, credential or kind may all have changed; the cached status
         # describes the old configuration and must not be presented as current.
@@ -363,6 +383,11 @@ def _public(row: sqlite3.Row) -> dict[str, Any]:
         "reads_into_life_atlas": kind in INBOUND_KINDS,
         "reads_from_life_atlas": kind in OUTBOUND_KINDS,
         "base_url": row["base_url"],
+        "manage_slug": row["manage_slug"],
+        # Home Assistant resolves an app's rotating Ingress token itself, so the
+        # durable link is by slug. Deliberately rooted at the Home Assistant
+        # frontend: this navigates the host, it is not a Life Atlas request.
+        "manage_url": f"/hassio/ingress/{row['manage_slug']}" if row["manage_slug"] else None,
         "has_key": bool(row["auth_key"]),
         "enabled": bool(row["enabled"]),
         "notes": row["notes"],
@@ -395,6 +420,21 @@ def _identifier(value: Any) -> str:
     if len(text) > 64 or not all(character.isalnum() or character in "-_" for character in text):
         raise RegistryError("connector_id may use only letters, digits, hyphen and underscore")
     return text
+
+
+def _manage_slug(value: Any) -> str:
+    """The Home Assistant app slug whose Ingress page manages this connector.
+
+    Optional: a connector with no page of its own simply has none. The prefix
+    differs between a locally installed app and a repository-installed one, so
+    it is stored rather than derived.
+    """
+    slug = str(value or "").strip()
+    if not slug:
+        return ""
+    if len(slug) > 128 or not re.fullmatch(r"[A-Za-z0-9_]+", slug):
+        raise RegistryError("An app slug may only contain letters, digits and underscores")
+    return slug
 
 
 def _flag(value: Any, *, default: bool) -> bool:
