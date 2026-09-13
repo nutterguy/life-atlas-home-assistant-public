@@ -3,6 +3,12 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.18.0
+
+- Link a durable WhatsApp conversation to an existing Life Atlas person without
+  copying messages or creating timeline events.
+- Show and update that identity link alongside nearby-message evidence review.
+
 ## 0.17.2
 
 - Recovered direct-chat names from archived incoming-message identity when WhatsApp's chat metadata has no usable name.

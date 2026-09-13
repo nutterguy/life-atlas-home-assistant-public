@@ -46,6 +46,8 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("/api/whatsapp/context", self.script)
         self.assertIn("Show nearby messages", self.script)
         self.assertIn("/api/whatsapp/promote", self.script)
+        self.assertIn("/api/whatsapp/conversation-link", self.script)
+        self.assertIn("This saves an identity link only", self.script)
         self.assertIn("window.confirm", self.script)
         self.assertIn("at most 20 messages", self.script)
 

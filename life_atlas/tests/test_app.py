@@ -88,6 +88,14 @@ class LifeAtlasTests(unittest.TestCase):
         context = self.app.whatsapp_context("wa-message-1")
         self.assertEqual(context["conversation_name"], "Alex")
         self.assertEqual(context["items"][0]["source_id"], "wa-message-1")
+        with closing(self.app.connect()) as connection, connection:
+            person_id = connection.execute("INSERT INTO people(name) VALUES('Alex')").lastrowid
+        link = self.app.save_whatsapp_conversation_link({
+            "conversation_id": "chat-1", "conversation_name": "Alex", "person_id": person_id,
+        })
+        self.assertEqual(link["person_name"], "Alex")
+        self.assertEqual(self.app.whatsapp_conversation_link("chat-1")["link"]["entity_id"], person_id)
+        self.assertEqual(self.app.whatsapp_conversation_link("another-chat"), {"link": None})
         event_id, replayed = self.app.promote_whatsapp_event({
             "source_ids": ["wa-message-1"], "title": "Dinner with Alex",
             "start_date": "2026-09-18", "status": "uncertain", "confidence": 0.6,

@@ -562,6 +562,33 @@ def whatsapp_context(source_id, *, before=5, after=5):
     }
 
 
+def whatsapp_conversation_link(conversation_id):
+    link = connector_registry.get_entity_link(
+        DATA, WHATSAPP_CONNECTOR_ID, "conversation", str(conversation_id or "").strip(), "person"
+    )
+    if not link:
+        return {"link": None}
+    with closing(connect()) as con:
+        person = con.execute("SELECT id,name FROM people WHERE id=?", (link["entity_id"],)).fetchone()
+    if not person:
+        return {"link": None}
+    return {"link": {**link, "person_name": person["name"]}}
+
+
+def save_whatsapp_conversation_link(payload):
+    conversation_id = str(payload.get("conversation_id") or "").strip()
+    person_id = int(payload.get("person_id"))
+    with closing(connect()) as con:
+        person = con.execute("SELECT id,name FROM people WHERE id=?", (person_id,)).fetchone()
+    if not person:
+        raise ValueError("Person not found")
+    link = connector_registry.save_entity_link(
+        DATA, WHATSAPP_CONNECTOR_ID, "conversation", conversation_id, "person", person_id,
+        str(payload.get("conversation_name") or ""),
+    )
+    return {**link, "person_name": person["name"]}
+
+
 def promote_whatsapp_event(payload, idempotency_key=None):
     request_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     event_payload = dict(payload)
@@ -858,6 +885,14 @@ class Handler(SimpleHTTPRequestHandler):
                 ))
             except (ValueError, ConnectorError, OSError) as exc:
                 return self.send_json({"error": str(exc)}, 400)
+        if route == "/api/whatsapp/conversation-link":
+            params = parse_qs(parsed.query)
+            try:
+                return self.send_json(whatsapp_conversation_link(
+                    params.get("conversation_id", [""])[0]
+                ))
+            except (ValueError, RegistryError) as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if route.startswith("/api/google-photos/picker/"):
             try:
                 return self.send_json(poll_picker_session(DATA, connect, route.rsplit("/", 1)[1]))
@@ -906,6 +941,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if route == "/api/whatsapp/promote":
                     event_id, _ = promote_whatsapp_event(payload)
                     return self.send_json({"id": event_id}, 201)
+                if route == "/api/whatsapp/conversation-link":
+                    return self.send_json({"link": save_whatsapp_conversation_link(payload)}, 201)
                 if route.startswith("/api/events/"):
                     return self.send_json({"id": update_event(int(route.rsplit("/", 1)[1]), payload)})
                 if route.startswith("/api/people/") and route.endswith("/merge"):

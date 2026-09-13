@@ -62,6 +62,18 @@ CREATE TABLE IF NOT EXISTS connectors (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS connector_entity_links (
+  connector_id TEXT NOT NULL,
+  external_type TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id INTEGER NOT NULL,
+  external_label TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(connector_id,external_type,external_id,entity_type),
+  FOREIGN KEY(connector_id) REFERENCES connectors(connector_id) ON DELETE CASCADE
+);
 """
 
 # Where a connector lives when it is installed as a local Home Assistant app.
@@ -261,6 +273,40 @@ def delete_connector(data_dir: Path, connector_id: str) -> dict[str, Any]:
     with closing(connect(data_dir)) as con, con:
         con.execute("DELETE FROM connectors WHERE connector_id=?", (connector_id,))
     return {"connector_id": connector_id, "deleted": True}
+
+
+def get_entity_link(data_dir: Path, connector_id: str, external_type: str,
+                    external_id: str, entity_type: str) -> dict[str, Any] | None:
+    with closing(connect(data_dir)) as con:
+        row = con.execute(
+            """SELECT connector_id,external_type,external_id,entity_type,entity_id,
+            external_label,created_at,updated_at FROM connector_entity_links
+            WHERE connector_id=? AND external_type=? AND external_id=? AND entity_type=?""",
+            (connector_id, external_type, external_id, entity_type),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_entity_link(data_dir: Path, connector_id: str, external_type: str,
+                     external_id: str, entity_type: str, entity_id: int,
+                     external_label: str = "") -> dict[str, Any]:
+    _row(data_dir, connector_id)
+    external_id = str(external_id or "").strip()
+    if not external_id or len(external_id) > 512:
+        raise RegistryError("External identity is invalid")
+    if external_type != "conversation" or entity_type != "person":
+        raise RegistryError("Only conversation-to-person links are supported")
+    with closing(connect(data_dir)) as con, con:
+        con.execute(
+            """INSERT INTO connector_entity_links(
+            connector_id,external_type,external_id,entity_type,entity_id,external_label)
+            VALUES(?,?,?,?,?,?) ON CONFLICT(connector_id,external_type,external_id,entity_type)
+            DO UPDATE SET entity_id=excluded.entity_id,external_label=excluded.external_label,
+            updated_at=CURRENT_TIMESTAMP""",
+            (connector_id, external_type, external_id, entity_type, int(entity_id),
+             str(external_label or "")[:512]),
+        )
+    return get_entity_link(data_dir, connector_id, external_type, external_id, entity_type)
 
 
 def probe(data_dir: Path, connector_id: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
