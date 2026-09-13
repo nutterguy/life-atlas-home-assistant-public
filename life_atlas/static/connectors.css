@@ -41,3 +41,19 @@
 /* The link sits among the card's buttons and must read as one of them. */
 .connector-actions .connector-link{display:inline-flex;align-items:center;gap:.35rem;text-decoration:none}
 .connector-actions .connector-link:hover{text-decoration:underline}
+
+/* Someone who has asked their OS for reduced motion gets every state change
+   instantly instead of animated (WCAG 2.3.3). This lives at the end of the
+   last stylesheet index.html links so it settles the cascade for all of them.
+   It drops the *transitions* only: `transform` itself is load-bearing layout
+   here (centring .map-load, the switch knob's checked position) and must stay,
+   and no element relies on a transition to become visible - every hover state
+   that fades something in sets its own final opacity, so it just appears. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+}
+
+/* Relationship navigation is native-button based; retain the established visual treatment. */
+.person-label,.person-event-label{background:none;border:0;color:inherit;font:inherit;text-align:left}
+.person-label{width:100%}
+.person-event-label{text-align:center;color:var(--muted);font-size:11px}

@@ -115,6 +115,27 @@ class ConnectorHTTPTests(unittest.TestCase):
             self.assertEqual(response.headers.get("Cache-Control"), "no-store")
             self.assertEqual(response.headers.get("X-Life-Atlas-Connector-Protocol"), "1")
 
+    def test_unexpected_service_failure_is_logged_and_redacted(self):
+        class BrokenService:
+            def handle(self, operation, params):
+                raise RuntimeError("synthetic connector failure")
+
+        server = ProtocolTestServer(BrokenService())
+        server.__enter__()
+        self.addCleanup(server.__exit__, None, None, None)
+        req = Request(server.base_url + "v1/info", headers={"Accept": "application/json"})
+        with self.assertLogs("connector_http", level="ERROR") as logs:
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(req, timeout=2)
+        self.assertEqual(ctx.exception.code, 500)
+        payload = json.loads(ctx.exception.read().decode("utf-8"))
+        self.assertEqual(payload["error"], {
+            "code": "internal_error",
+            "message": "Connector operation failed",
+        })
+        self.assertIn("connector operation 'info' failed", "\n".join(logs.output))
+        self.assertIn("synthetic connector failure", "\n".join(logs.output))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,15 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.17.1
+
+- Logged unexpected connector failures with their traceback while keeping internal details out of HTTP responses.
+- Made every dialog close button announce itself as **Close** to assistive technology.
+- Made toast messages screen-reader-visible and kept them on screen for six seconds.
+- Honoured the operating system's reduced-motion setting and enlarged relationship markers to the minimum accessible target size.
+- Made relationship lanes, event dots and labels operable with a keyboard and gave each dot an accessible name.
+- Removed the hidden, non-functional sidebar pin control now that the Home Assistant layout keeps the sidebar expanded.
+
 ## 0.17.0
 
 - Connectors configure themselves. Life Atlas finds the connector apps installed alongside it, registers each under the identity the connector declares, and pairs with it to obtain its key. There is no address to look up, no key to copy and no identifier to get right. **Find connectors** on the Sources page repeats the search on demand, and it also runs quietly at start-up.

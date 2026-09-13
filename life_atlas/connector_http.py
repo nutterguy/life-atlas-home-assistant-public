@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -11,6 +12,8 @@ from urllib.request import Request, urlopen
 
 from connectors import (ConnectorAuthRequired, ConnectorProtocolError, ConnectorTimeout,
                         ConnectorUnavailable)
+
+logger = logging.getLogger(__name__)
 
 PROTOCOL_PREFIX = "/v1"
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -158,6 +161,7 @@ def make_protocol_handler(service):
             except ValueError as exc:
                 self._json_error(400, "bad_request", str(exc))
             except Exception:
+                logger.exception("connector operation %r failed", operation)
                 self._json_error(500, "internal_error", "Connector operation failed")
 
         def _json_response(self, status: int, payload: Mapping[str, Any]):

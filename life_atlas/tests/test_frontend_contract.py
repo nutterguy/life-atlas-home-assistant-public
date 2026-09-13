@@ -56,6 +56,37 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("This view could not be displayed", self.script)
         self.assertIn("load-error", self.css)
 
+    def test_dialog_close_buttons_have_accessible_names(self):
+        close_buttons = re.findall(r'<button[^>]*class="[^"]*close[^"]*"[^>]*>', self.html)
+        self.assertTrue(close_buttons)
+        self.assertTrue(all('aria-label="Close"' in button for button in close_buttons))
+
+    def test_toast_is_announced_and_remains_visible_long_enough(self):
+        self.assertIn('id="toast" role="status" aria-live="polite" aria-atomic="true"', self.html)
+        self.assertIn("clearTimeout(toastTimer)", self.script)
+        self.assertIn("setTimeout(()=>t.style.display='none',6000)", self.script)
+
+    def test_reduced_motion_preference_disables_animation(self):
+        self.assertIn("@media (prefers-reduced-motion: reduce)", self.css)
+        self.assertIn("transition:none!important", self.css)
+        self.assertIn("animation:none!important", self.css)
+
+    def test_relationship_timeline_dots_meet_minimum_target_size(self):
+        self.assertRegex(self.css, r"\.person-dot\{[^}]*width:24px[^}]*height:24px")
+
+    def test_relationship_timelines_use_native_keyboard_controls(self):
+        self.assertIn('<button type="button" class="person-label"', self.script)
+        self.assertIn('<button type="button" class="person-dot ', self.script)
+        self.assertIn('<button type="button" class="person-event-dot ', self.script)
+        self.assertIn('<button type="button" class="person-event-label"', self.script)
+        self.assertNotIn('<i class="person-event-dot ', self.script)
+        self.assertNotIn('<span class="person-event-label"', self.script)
+
+    def test_permanently_expanded_sidebar_has_no_dead_pin_control(self):
+        self.assertNotIn('id="sidebar-pin"', self.html)
+        self.assertNotIn("$('#sidebar-pin')", self.script)
+        self.assertNotIn("#sidebar-pin", self.css)
+
     def test_sidebar_uses_svg_icons_and_stable_desktop_width(self):
         self.assertIn("const svgIcon", self.script)
         self.assertIn("grid-template-columns:225px", self.css)
