@@ -16,6 +16,25 @@ Install it as a local app, not through a repository URL. A repository-installed 
 4. Install **Life Atlas WhatsApp Archive** and start it. The first build pulls the pinned WAHA image, so it takes several minutes and needs disk space.
 5. Open its own Ingress page and follow the pairing steps below.
 
+## Migrating an archive from Life Atlas 0.15.x
+
+If you ran the bundled archive in Life Atlas 0.15.x, **do not re-pair**. Updating an app does not clear its data directory, so the durable archive, the linked-device state and the generated credentials are all still under `/data/whatsapp` inside the Life Atlas app. 0.16.0 stops using them; it does not delete them.
+
+The archive app expects exactly the same layout one level up:
+
+| Life Atlas 0.15.x                                | Archive app                   |
+| ------------------------------------------------ | ----------------------------- |
+| `/data/whatsapp/archive/whatsapp-archive.sqlite3` | `/data/archive/whatsapp-archive.sqlite3` |
+| `/data/whatsapp/waha/`                            | `/data/waha/`                 |
+| `/data/whatsapp/secrets/`                         | `/data/secrets/`              |
+| `/data/whatsapp/runtime-config.json`              | `/data/runtime-config.json`   |
+
+So the migration is a copy of the contents of `/data/whatsapp` into the archive app's own `/data`, done **after installing the archive app but before starting it**. Carrying `secrets/` across matters: it keeps the WAHA credentials and the connector key that the paired session already uses.
+
+One thing needs correcting during the copy. The bundled build ran its management listener on port 8110 and told WAHA to deliver webhooks to `http://127.0.0.1:8110/internal/waha-events`; the archive app listens on 8099. WAHA stores that URL with the session, and the session is only configured when it is first created, so a migrated session would keep posting to a port nothing listens on. Live capture of new, edited and revoked messages would stop, silently, while periodic reconciliation carried on — which is the worst kind of failure. Rewrite that port in the stored session config as part of the copy, then confirm on the archive app's page that a newly received message appears without waiting for a reconciliation.
+
+Keep `/data/whatsapp` in the Life Atlas app until the archive app reports the message counts and coverage dates you expect. It is the only copy.
+
 ## Link and choose chats
 
 1. Select **Create / start** and scan the QR code from WhatsApp under **Linked devices**.
