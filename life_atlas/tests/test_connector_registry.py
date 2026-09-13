@@ -60,18 +60,18 @@ class ConnectorRegistryTests(unittest.TestCase):
 
     def test_known_connectors_are_seeded_switched_off(self):
         entries = {c["connector_id"]: c for c in registry.list_connectors(self.data)}
-        self.assertEqual(set(entries), {"reference", "whatsapp_archive", "chatgpt_bridge"})
+        self.assertEqual(set(entries), {"reference", "whatsapp", "chatgpt_bridge"})
         for entry in entries.values():
             self.assertFalse(entry["enabled"])
             self.assertEqual(entry["state"], "unknown")
-        self.assertTrue(entries["whatsapp_archive"]["reads_into_life_atlas"])
-        self.assertFalse(entries["whatsapp_archive"]["reads_from_life_atlas"])
+        self.assertTrue(entries["whatsapp"]["reads_into_life_atlas"])
+        self.assertFalse(entries["whatsapp"]["reads_from_life_atlas"])
 
     def test_a_removed_connector_is_not_seeded_back(self):
-        registry.delete_connector(self.data, "whatsapp_archive")
+        registry.delete_connector(self.data, "whatsapp")
         registry.initialise(self.data)
         ids = [c["connector_id"] for c in registry.list_connectors(self.data)]
-        self.assertNotIn("whatsapp_archive", ids)
+        self.assertNotIn("whatsapp", ids)
 
     def test_a_connector_can_read_in_read_out_or_both(self):
         entry = registry.save_connector(self.data, {
@@ -132,9 +132,9 @@ class ConnectorRegistryTests(unittest.TestCase):
         self.assertIsNone(entry["last_checked_at"])
 
     def test_a_connector_with_its_own_page_offers_a_link_to_it(self):
-        entry = registry.get_connector(self.data, "whatsapp_archive")
+        entry = registry.get_connector(self.data, "whatsapp")
         self.assertEqual(entry["manage_slug"], "local_life_atlas_whatsapp_archive")
-        self.assertEqual(entry["manage_url"], "/hassio/ingress/local_life_atlas_whatsapp_archive")
+        self.assertEqual(entry["manage_url"], "/hassio/ingress/local_life_atlas_whatsapp_archive/")
 
     def test_a_connector_without_a_page_offers_no_link(self):
         entry = registry.get_connector(self.data, "chatgpt_bridge")
@@ -143,10 +143,10 @@ class ConnectorRegistryTests(unittest.TestCase):
 
     def test_the_app_slug_is_editable_because_its_prefix_depends_on_the_install(self):
         entry = registry.save_connector(self.data, {
-            "connector_id": "whatsapp_archive", "name": "WhatsApp archive", "kind": "source",
+            "connector_id": "whatsapp", "name": "WhatsApp archive", "kind": "source",
             "base_url": "http://example.invalid:8097", "manage_slug": "a1b2c3d4_life_atlas_whatsapp_archive",
         })
-        self.assertEqual(entry["manage_url"], "/hassio/ingress/a1b2c3d4_life_atlas_whatsapp_archive")
+        self.assertEqual(entry["manage_url"], "/hassio/ingress/a1b2c3d4_life_atlas_whatsapp_archive/")
 
     def test_a_slug_that_could_escape_the_link_is_refused(self):
         for bad in ("../../hassio/system", "slug with spaces", "slug/../x", "a" * 129):
@@ -155,6 +155,33 @@ class ConnectorRegistryTests(unittest.TestCase):
                     "connector_id": "reference", "name": "Reference", "kind": "source",
                     "base_url": "http://example.invalid:8098", "manage_slug": bad,
                 })
+
+    def test_a_row_registered_under_the_old_id_is_renamed_not_reseeded(self):
+        """0.16.0 shipped the wrong id, so the connector's own identity refused it.
+
+        The stored key and the on/off state must survive the correction.
+        """
+        legacy = self.data / "legacy"
+        legacy.mkdir()
+        registry.initialise(legacy)
+        with closing(sqlite3.connect(registry.registry_path(legacy))) as con:
+            con.execute("UPDATE connectors SET connector_id='whatsapp_archive',"
+                        " auth_key='k'||substr(hex(randomblob(21)),1,41), enabled=1"
+                        " WHERE connector_id='whatsapp'")
+            con.commit()
+
+        registry.initialise(legacy)
+
+        entry = registry.get_connector(legacy, "whatsapp")
+        self.assertTrue(entry["has_key"])
+        self.assertTrue(entry["enabled"])
+        self.assertEqual(entry["state"], "unknown")
+        with self.assertRaises(registry.RegistryError):
+            registry.get_connector(legacy, "whatsapp_archive")
+
+    def test_the_ingress_link_carries_the_trailing_slash_home_assistant_expects(self):
+        entry = registry.get_connector(self.data, "whatsapp")
+        self.assertTrue(entry["manage_url"].endswith("/"))
 
     def test_a_registry_from_an_earlier_version_gains_the_new_column(self):
         """0.16.0 shipped without manage_slug; an existing registry must migrate."""
@@ -181,7 +208,7 @@ class ConnectorRegistryTests(unittest.TestCase):
 
         registry.initialise(older)
 
-        entry = registry.get_connector(older, "whatsapp_archive")
+        entry = registry.get_connector(older, "whatsapp")
         self.assertEqual(entry["manage_slug"], "")
         self.assertIsNone(entry["manage_url"])
         # The existing row survives: migration must not reseed over it.

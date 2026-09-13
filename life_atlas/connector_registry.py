@@ -75,7 +75,7 @@ BUILT_IN = (
         "notes": "Deterministic connector used to prove packaging, networking and protocol compatibility.",
     },
     {
-        "connector_id": "whatsapp_archive",
+        "connector_id": "whatsapp",
         "name": "WhatsApp archive",
         "kind": "source",
         "base_url": "http://local-life-atlas-whatsapp-archive:8097",
@@ -112,6 +112,7 @@ def initialise(data_dir: Path) -> None:
     with closing(connect(data_dir)) as con, con:
         con.executescript(SCHEMA)
         _add_missing_columns(con)
+        _rename_legacy_ids(con)
         if con.execute("SELECT COUNT(*) FROM connectors").fetchone()[0]:
             return
         for entry in BUILT_IN:
@@ -123,6 +124,25 @@ def initialise(data_dir: Path) -> None:
                 " VALUES(?,?,?,?,?,?,0)",
                 (entry["connector_id"], entry["name"], entry["kind"], base_url.rstrip("/"),
                  entry.get("manage_slug", ""), entry["notes"]),
+            )
+
+
+# 0.16.0 seeded the WhatsApp archive as "whatsapp_archive", but the connector has
+# always declared itself "whatsapp", so the identity check refused it. Rename the
+# row rather than reseed, so a stored key and an on/off state survive the fix.
+LEGACY_IDS = {"whatsapp_archive": "whatsapp"}
+
+
+def _rename_legacy_ids(con: sqlite3.Connection) -> None:
+    for old, new in LEGACY_IDS.items():
+        rows = {row["connector_id"] for row in con.execute(
+            "SELECT connector_id FROM connectors WHERE connector_id IN (?,?)", (old, new)
+        )}
+        if old in rows and new not in rows:
+            con.execute(
+                "UPDATE connectors SET connector_id=?, last_state='unknown', last_error='',"
+                " last_checked_at=NULL WHERE connector_id=?",
+                (new, old),
             )
 
 
@@ -387,7 +407,7 @@ def _public(row: sqlite3.Row) -> dict[str, Any]:
         # Home Assistant resolves an app's rotating Ingress token itself, so the
         # durable link is by slug. Deliberately rooted at the Home Assistant
         # frontend: this navigates the host, it is not a Life Atlas request.
-        "manage_url": f"/hassio/ingress/{row['manage_slug']}" if row["manage_slug"] else None,
+        "manage_url": f"/hassio/ingress/{row['manage_slug']}/" if row["manage_slug"] else None,
         "has_key": bool(row["auth_key"]),
         "enabled": bool(row["enabled"]),
         "notes": row["notes"],

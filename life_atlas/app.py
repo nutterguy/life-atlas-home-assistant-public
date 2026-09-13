@@ -486,7 +486,7 @@ def save_event(payload):
         return cur.lastrowid
 
 
-WHATSAPP_CONNECTOR_ID = "whatsapp_archive"
+WHATSAPP_CONNECTOR_ID = "whatsapp"
 
 
 def make_whatsapp_client():

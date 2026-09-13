@@ -3,6 +3,11 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.16.2
+
+- Fixed the WhatsApp archive connector reporting **Incompatible**. Life Atlas registered it under an identifier the connector does not use, and the registry correctly refused a connector whose declared identity did not match its registration. The registration is corrected in place on upgrade, so a stored connector key and the on/off switch survive; nothing needs re-entering.
+- Fixed the **Open web UI** link on a connector card, which was missing the trailing slash Home Assistant's app pages expect.
+
 ## 0.16.1
 
 - A connector card in **Sources** now links straight to that connector's own Home Assistant page, so managing one no longer means leaving Life Atlas and finding the app yourself. The link appears once the connector records its app slug; the WhatsApp archive is set up for it already, and the slug is editable under **Configure** because its prefix differs between a locally installed app and a repository-installed one.
