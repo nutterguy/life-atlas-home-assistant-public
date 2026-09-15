@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 required = [
     "AGENTS.md", "CHANGELOG.md", "README.md", "app.py", "agent_api.py", "mcp_ingress_proxy.py", "google_photos_picker.py", "media_store.py", "restore_service.py", "schema.sql", "Dockerfile", "run.sh",
-    "config.yaml", "importance.py", "sample-seed.json", "connectors.py", "connector_http.py", "connector_registry.py",
+    "config.yaml", "repository.yaml", "importance.py", "sample-seed.json", "connectors.py", "connector_http.py", "connector_registry.py",
     "static/connector-tools.js", "docs/CONNECTORS.md", "docs/CONNECTOR_PROTOCOL_V1.md",
     "docs/ARCHITECTURE.md", "docs/DESIGN.md", "docs/DATA_MODEL.md",
     "docs/CHATGPT_INGESTION.md", "docs/GOOGLE_PHOTOS.md", "docs/SQLITE_RESTORE.md", "docs/DEPLOYMENT.md",
@@ -41,6 +41,60 @@ if not re.search(
     raise SystemExit(
         f"CHANGELOG.md has no entry for current version {config_version.group(1)}"
     )
+# The public mirror is reproduced from the .public-files allowlist, so a file
+# that is required here but absent from that list ships an incomplete mirror
+# with no other signal. Fail loudly instead of drifting silently.
+allowlist_path = root / ".public-files"
+if allowlist_path.exists():
+    allowlisted = {
+        line.strip()
+        for line in allowlist_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    unlisted = [item for item in required if item not in allowlisted]
+    if unlisted:
+        raise SystemExit(
+            "Publish allowlist drift: files required by this repository are not in "
+            f".public-files, so the mirror would ship without them: {unlisted}"
+        )
+    unlisted_self = [
+        item for item in (".public-files", "repository.yaml") if item not in allowlisted
+    ]
+    if unlisted_self:
+        raise SystemExit(f"Publish allowlist must list itself and: {unlisted_self}")
+    absent = sorted(item for item in allowlisted if not (root / item).exists())
+    if absent:
+        raise SystemExit(f".public-files lists files that do not exist: {absent}")
+elif (root / ".git").exists():
+    raise SystemExit(".public-files is missing: the publish allowlist cannot be verified")
+
+# repository.yaml is what the Home Assistant add-on store reads to identify the
+# repository. Keep its metadata pinned to config.yaml so the two copies cannot
+# drift apart unnoticed.
+manifest = (root / "repository.yaml").read_text(encoding="utf-8")
+
+
+def _scalar(text: str, key: str) -> str | None:
+    match = re.search(rf'^{key}:\s*"?([^"\n]+?)"?\s*$', text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+manifest_name = _scalar(manifest, "name")
+manifest_url = _scalar(manifest, "url")
+manifest_maintainer = _scalar(manifest, "maintainer")
+if not manifest_name or not manifest_url or not manifest_maintainer:
+    raise SystemExit("repository.yaml must declare name, url and maintainer")
+config_name = _scalar(config, "name")
+config_url = _scalar(config, "url")
+if manifest_name != config_name:
+    raise SystemExit(
+        f"repository.yaml name {manifest_name!r} does not match config.yaml {config_name!r}"
+    )
+if manifest_url != config_url:
+    raise SystemExit(
+        f"repository.yaml url {manifest_url!r} does not match config.yaml {config_url!r}"
+    )
+
 for required_option in (
     'google_photos_mcp_client_id: "str?"',
     'google_photos_mcp_client_secret: "password?"',

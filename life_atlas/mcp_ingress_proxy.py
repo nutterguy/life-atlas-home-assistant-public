@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import logging
 import os
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 APP_HOST = "127.0.0.1"
 APP_PORT = int(os.environ.get("LIFE_ATLAS_BACKEND_PORT", "8100"))
@@ -30,6 +33,28 @@ def request_local(port: int, method: str, target: str, body: bytes | None = None
         connection.close()
 
 
+_LAST_STATUS_FAILURE: dict[str, str] = {}
+
+
+def _warn_on_new_failure(key: str, exc: BaseException, message: str) -> None:
+    """Warn about an unexpected failure, but only when it is a new one.
+
+    ``mcp_status()`` is polled by the UI, so an unchanging fault must not emit
+    a log line on every single request.  The signature is remembered per
+    ``key`` and cleared by ``_clear_failure`` once that check succeeds again,
+    so a fault that comes back after a recovery is reported afresh.
+    """
+    signature = f"{type(exc).__name__}: {exc}"
+    if _LAST_STATUS_FAILURE.get(key) == signature:
+        return
+    _LAST_STATUS_FAILURE[key] = signature
+    logger.warning("%s: %s", message, signature)
+
+
+def _clear_failure(key: str) -> None:
+    _LAST_STATUS_FAILURE.pop(key, None)
+
+
 def mcp_status():
     configured = bool(os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"))
     redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI", "")
@@ -43,8 +68,16 @@ def mcp_status():
         # A valid health response still proves that the local service is
         # available and must not block the initial Connect MCP flow.
         available = status in {200, 503} and health in {"healthy", "degraded", "unhealthy"}
-    except Exception:
-        pass
+        _clear_failure("health")
+    except OSError as exc:
+        # Expected whenever the Google Photos MCP simply is not installed or
+        # not running yet: connection refused, DNS/socket errors, timeouts.
+        # This is polled by the UI, so it stays at debug to avoid log spam.
+        logger.debug("Google Photos MCP health check on port %s failed: %s", MCP_PORT, exc)
+    except Exception as exc:
+        # A reachable service that answers with something unreadable is a real
+        # fault worth surfacing, but it would also repeat on every poll.
+        _warn_on_new_failure("health", exc, f"Google Photos MCP health check on port {MCP_PORT} returned an unusable response")
 
     authenticated = False
     if TOKEN_DB.exists():
@@ -54,7 +87,11 @@ def mcp_status():
                 authenticated = bool(con.execute("SELECT 1 FROM keyv WHERE key LIKE 'tokens:%' LIMIT 1").fetchone())
             finally:
                 con.close()
-        except sqlite3.Error:
+            _clear_failure("tokens")
+        except sqlite3.Error as exc:
+            # The file exists but cannot be read: locked, corrupt, or not yet
+            # initialised by the MCP.  Report it once per distinct fault.
+            _warn_on_new_failure("tokens", exc, f"Google Photos MCP token store {TOKEN_DB} could not be read")
             authenticated = False
 
     return {

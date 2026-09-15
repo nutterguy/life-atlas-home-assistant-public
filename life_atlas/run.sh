@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
 set -u
 
+# Nothing this add-on runs needs root. The container is still started as root so
+# that the Home Assistant base image's init and the /data volume fix-up below
+# work, but the Python services and the Google Photos MCP Node process are run
+# as the unprivileged "lifeatlas" account created in the Dockerfile.
+#
+# The root phase only prepares state that an unprivileged process could not:
+# it takes ownership of the /data volume (created root-owned by the Supervisor)
+# and creates the runtime-data symlink inside the root-owned /opt tree. It then
+# re-executes this script as lifeatlas, so process supervision, option reading
+# and shutdown handling all happen unprivileged.
+LIFE_ATLAS_RUN_AS=lifeatlas
+if [ "$(id -u)" = "0" ]; then
+  if command -v su-exec >/dev/null 2>&1 && id -u "$LIFE_ATLAS_RUN_AS" >/dev/null 2>&1; then
+    mkdir -p /data/google-photos-mcp /data/.home
+    ln -sfn /data/google-photos-mcp /opt/google-photos-mcp/runtime-data
+    chown -R "$LIFE_ATLAS_RUN_AS:$LIFE_ATLAS_RUN_AS" /data
+    export HOME=/data/.home
+    exec su-exec "$LIFE_ATLAS_RUN_AS" "$0" "$@"
+  fi
+  # Never refuse to start over this: a missing su-exec or account is a packaging
+  # problem, not a reason to leave the user without their add-on.
+  echo "Life Atlas: cannot drop privileges (su-exec or the ${LIFE_ATLAS_RUN_AS} account is missing); continuing as root." >&2
+fi
+
 export LIFE_ATLAS_DATA_DIR=/data
 export LIFE_ATLAS_HOST=0.0.0.0
 export LIFE_ATLAS_PORT=8099
@@ -42,7 +66,12 @@ MCP_RUNTIME_DATA="$MCP_DIR/runtime-data"
 
 mkdir -p "$MCP_DATA_DIR"
 chmod 700 "$MCP_DATA_DIR"
-ln -sfn "$MCP_DATA_DIR" "$MCP_RUNTIME_DATA"
+# /opt is root-owned, so once privileges have been dropped the symlink can only
+# be created by the root phase above. Re-create it only when it is missing or
+# wrong, which is also the standalone (never-was-root) case.
+if [ "$(readlink "$MCP_RUNTIME_DATA" 2>/dev/null || true)" != "$MCP_DATA_DIR" ]; then
+  ln -sfn "$MCP_DATA_DIR" "$MCP_RUNTIME_DATA"
+fi
 export TOKEN_STORAGE_PATH="runtime-data/tokens.db"
 
 google_client_id="$(read_option google_photos_mcp_client_id)"

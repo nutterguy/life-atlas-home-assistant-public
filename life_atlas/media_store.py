@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import os
 from contextlib import closing
 from datetime import date
 from pathlib import Path
@@ -11,6 +12,17 @@ from PIL import Image, ImageOps
 
 
 MAX_UPLOAD_BYTES = 40 * 1024 * 1024
+# Personal photos: same restrictive modes the rest of the data directory uses.
+DIR_MODE = 0o700
+FILE_MODE = 0o600
+
+
+def _restrict(path: Path, mode: int) -> None:
+    """Tighten an existing path, tolerating filesystems that cannot (Windows)."""
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
 
 
 def decode_data_url(value: str) -> bytes:
@@ -62,8 +74,11 @@ def store_image(connect, data_dir: Path, raw: bytes, payload: dict, *, max_dimen
     digest = hashlib.sha256(normalised).hexdigest()
     relative = Path("media") / digest[:2] / f"{digest}.webp"
     target = data_dir / relative
-    target.parent.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
+    _restrict(target.parent, DIR_MODE)
     if not target.exists():
+        target.touch(mode=FILE_MODE)
+        _restrict(target, FILE_MODE)
         target.write_bytes(normalised)
     featured = 1 if payload.get("is_featured", True) else 0
     with closing(connect()) as con, con:

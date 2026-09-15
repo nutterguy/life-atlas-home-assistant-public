@@ -25,7 +25,16 @@ LABEL \
   io.hass.type="app" \
   io.hass.arch="${BUILD_ARCH}"
 
-RUN apk add --no-cache python3 py3-pillow libstdc++ libgcc
+RUN apk add --no-cache python3 py3-pillow libstdc++ libgcc su-exec
+
+# The add-on's own processes do not need root. The container still starts as
+# root so s6-overlay (the Home Assistant base image init, kept because
+# config.yaml sets init: false) and the /data ownership fix-up in run.sh keep
+# working; run.sh then drops to this account with su-exec before starting any
+# Python or Node process. The application code under /opt stays root-owned and
+# read-only to that account.
+RUN addgroup -S -g 1000 lifeatlas \
+  && adduser -S -D -H -u 1000 -G lifeatlas -s /sbin/nologin lifeatlas
 
 WORKDIR /opt/life-atlas
 COPY app.py agent_api.py mcp_ingress_proxy.py google_photos_picker.py schema.sql ingest_curated.py curated-ingest-template.json sample-seed.json ./

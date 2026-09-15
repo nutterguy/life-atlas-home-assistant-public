@@ -47,6 +47,39 @@ MAX_JSON_BYTES = 55 * 1024 * 1024
 MAX_BACKUP_ARCHIVES = max(1, int(os.environ.get("LIFE_ATLAS_MAX_BACKUPS", "10")))
 REQUEST_GATE = RequestGate()
 RESTORE = None
+# /data holds the whole personal history: the database, imported CSVs, exports,
+# backup archives and every photo. Lock it down the way restore_service.py and
+# whatsapp_archive/secrets_init.py already lock down their own subtrees.
+DIR_MODE = 0o700
+FILE_MODE = 0o600
+
+
+def secure_path(path: Path, mode: int) -> Path:
+    """Tighten an existing file or directory to `mode`.
+
+    `mkdir(mode=...)` only applies to directories it actually creates, and is
+    masked by the process umask, so an install upgraded from an earlier version
+    keeps whatever permissions its directories were created with. An explicit
+    chmod is what tightens those. On Windows (the desktop sibling build) chmod
+    only toggles the read-only bit, which is harmless here; either way a
+    permissions failure must never stop Life Atlas from starting.
+    """
+    try:
+        os.chmod(path, mode)
+    except OSError as exc:  # unsupported filesystem, or not our file to chmod
+        print(f"Could not restrict permissions on {path}: {exc}", flush=True)
+    return path
+
+
+def secure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
+    return secure_path(path, DIR_MODE)
+
+
+def secure_new_file(path: Path) -> Path:
+    """Create `path` (if needed) with a restrictive mode before it is written."""
+    path.touch(mode=FILE_MODE, exist_ok=True)
+    return secure_path(path, FILE_MODE)
 
 
 def connect():
@@ -65,10 +98,10 @@ def _discover_connectors() -> None:
 
 
 def initialise():
-    DATA.mkdir(exist_ok=True)
-    IMPORTS.mkdir(exist_ok=True)
-    BACKUPS.mkdir(exist_ok=True)
-    MEDIA.mkdir(exist_ok=True)
+    secure_dir(DATA)
+    secure_dir(IMPORTS)
+    secure_dir(BACKUPS)
+    secure_dir(MEDIA)
     connector_registry.initialise(DATA)
     # A connector installed alongside Life Atlas should need no configuring.
     # Never let an unreachable one delay or fail start-up.
@@ -85,6 +118,11 @@ def initialise():
             seed(con)
             if con.execute("SELECT COUNT(*) FROM chapters").fetchone()[0] == 0:
                 seed_chapters(con)
+    # SQLite creates the database and its WAL sidecars itself, honouring only
+    # the umask, so tighten them once the connection above has made them.
+    for path in (DB, DB.with_name(DB.name + "-wal"), DB.with_name(DB.name + "-shm")):
+        if path.exists():
+            secure_path(path, FILE_MODE)
 
 
 def migrate(con):
@@ -740,7 +778,7 @@ def generic_csv_import(path):
 
 
 def export_csv():
-    out = DATA / "life_atlas_export.csv"
+    out = secure_new_file(DATA / "life_atlas_export.csv")
     with closing(connect()) as con, out.open("w", encoding="utf-8-sig", newline="") as f:
         records = rows(con, "SELECT title,start_date,end_date,description,category,status,confidence,importance FROM events ORDER BY start_date")
         writer = csv.DictWriter(f, fieldnames=records[0].keys() if records else ["title", "start_date"])
@@ -750,8 +788,8 @@ def export_csv():
 
 def backup():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    target = BACKUPS / f"life-atlas-backup-{stamp}.zip"
-    temp_db = BACKUPS / f"snapshot-{stamp}.sqlite3"
+    target = secure_new_file(BACKUPS / f"life-atlas-backup-{stamp}.zip")
+    temp_db = secure_new_file(BACKUPS / f"snapshot-{stamp}.sqlite3")
     src = connect()
     dst = sqlite3.connect(temp_db)
     try:
