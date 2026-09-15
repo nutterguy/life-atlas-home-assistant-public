@@ -85,4 +85,5 @@ Home Assistant-specific behaviour is limited to `config.yaml`, `Dockerfile`, and
 - Google Photos is contacted only when you explicitly connect or choose a photo. The access token is not written to the add-on data directory.
 - WhatsApp lives in its own app, **Life Atlas WhatsApp Archive**, installed separately from the Life Atlas Connectors repository. It holds its own pairing state and archive in its own `/data`; Life Atlas reaches it only over Connector Protocol v1, and only while the connector is switched on in **Sources**.
 - The optional Places map loads Leaflet and, for its dark basemap tiles, Esri's keyless World Dark Gray Canvas service over the internet. No API key or account is involved and no Life Atlas data leaves the machine; the map requests only the tile images for the area on screen.
+- Country flags, place-card country outlines and the brand marks on external links are bundled with the app as SVG. They are drawn from local files only, so they need no network and reveal nothing about what you are looking at.
 - SQLite data is not encrypted by the app; rely on secured Home Assistant access and encrypted backups where appropriate.

@@ -18,6 +18,8 @@ class FrontendContractTests(unittest.TestCase):
         )
         cls.photos = (ROOT / "static" / "photo-tools.js").read_text(encoding="utf-8")
         cls.connectors = (ROOT / "static" / "connector-tools.js").read_text(encoding="utf-8")
+        cls.geo = (ROOT / "static" / "geo-assets.js").read_text(encoding="utf-8")
+        cls.logos = (ROOT / "static" / "link-logos.js").read_text(encoding="utf-8")
         cls.dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         cls.run_script = (ROOT / "run.sh").read_text(encoding="utf-8")
         cls.config = (ROOT / "config.yaml").read_text(encoding="utf-8")
@@ -241,6 +243,62 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("const COUNTRY_CODES=", self.script)
         self.assertIn("function countryFlag(", self.script)
         self.assertIn("countryFlag(p.country)", self.script)
+
+    def test_flags_are_bundled_graphics_rather_than_emoji(self):
+        # Segoe UI Emoji carries no flag glyphs, so an emoji flag renders on
+        # Windows as two letter boxes. Nothing may reintroduce the glyph route.
+        self.assertIn("COUNTRY_FLAG_SVG[code]", self.script)
+        self.assertNotIn("supportsFlagGlyphs", self.script)
+        self.assertNotIn("0x1F1E6", self.script)
+        self.assertNotIn("country-code", self.css, "the letter-box fallback is gone")
+
+    def test_bundled_graphics_load_before_the_app_uses_them(self):
+        for bundle in ("geo-assets.js", "link-logos.js"):
+            self.assertIn(bundle, self.html)
+            self.assertLess(self.html.index(bundle), self.html.index("app.js?"),
+                            f"{bundle} must be defined before app.js draws with it")
+
+    def test_bundled_graphics_are_served_from_the_add_on(self):
+        # A CDN would break the offline install and leak which page is open.
+        for bundle in ("geo-assets.js", "link-logos.js"):
+            self.assertNotIn(f"//{bundle}", self.html)
+        self.assertIn("const COUNTRY_FLAG_SVG=", self.geo)
+        self.assertIn("const COUNTRY_OUTLINE=", self.geo)
+        self.assertIn("const LINK_LOGO=", self.logos)
+        self.assertIn("const LINK_LOGO_PATTERNS=", self.logos)
+
+    def test_every_supported_country_has_a_flag_and_an_outline(self):
+        codes = set(re.findall(r"'[^']+':'([A-Z]{2})'", 
+                               re.search(r"const COUNTRY_CODES=\{(.*?)\};", self.script, re.S).group(1)))
+        self.assertTrue(codes)
+        for code in sorted(codes):
+            self.assertIn(f"  {code}:", self.geo.split("const COUNTRY_OUTLINE={")[0],
+                          f"{code} has no bundled flag; rerun scripts/generate_geo_assets.py")
+            self.assertIn(f"  {code}:{{box:", self.geo,
+                          f"{code} has no bundled outline; rerun scripts/generate_geo_assets.py")
+
+    def test_place_cards_are_watermarked_with_their_country(self):
+        self.assertIn("function countryOutline(", self.script)
+        self.assertIn("countryOutline(p.country)", self.script)
+        self.assertIn(".card-map{", self.css)
+        self.assertIn("pointer-events:none", re.search(r"\.card-map\{[^}]*\}", self.css).group(0))
+
+    def test_map_pins_name_their_country_on_hover(self):
+        self.assertIn("marker.bindTooltip(", self.script)
+        self.assertIn("pin-tip", self.script)
+        self.assertIn(".pin-tip", self.css)
+        self.assertIn("marker.bindPopup(", self.script, "the click popup must stay")
+
+    def test_event_links_appear_at_the_top_and_the_bottom(self):
+        # The list at the foot of a long event page is easy to miss, so the same
+        # links also sit in the fact grid beside the date, place, people and trip.
+        self.assertIn("function linkFacts(", self.script)
+        self.assertIn("${linkFacts(d.links)}</div>", self.script)
+        self.assertLess(self.script.index("linkFacts(d.links)"),
+                        self.script.index("External links"),
+                        "the chips belong above the external-links section")
+        self.assertIn("GENERIC_LINK_MARK", self.script, "an unknown host still needs a chip")
+        self.assertIn(".fact-link", self.css)
 
     def test_action_rows_align_their_buttons(self):
         rules = re.findall(r"\.entity-actions\{[^}]*\}", self.css)

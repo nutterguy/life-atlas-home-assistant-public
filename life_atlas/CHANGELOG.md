@@ -3,6 +3,13 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.19.0
+
+- External links on an event now appear as branded chips at the top of the page, beside the date, place, people and trip, instead of only in the list at the foot of the page.
+- Hovering a pin on the Places map now names the place and the country it is in.
+- Each place card is now watermarked with the outline of its country rather than the same pin icon on every card.
+- Country flags are now drawn from bundled graphics, so Windows shows real flags instead of two-letter boxes.
+
 ## 0.18.3
 
 - Life Atlas now reports its real version when started outside the add-on wrapper, instead of a fixed placeholder that had fallen twelve releases behind.

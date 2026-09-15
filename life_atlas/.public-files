@@ -39,7 +39,11 @@ schema.sql
 scripts/validate_repository.py
 scripts/update_google_photos_mcp.py
 scripts/promote_race_importance.py
+scripts/generate_geo_assets.py
+scripts/generate_link_logos.py
 static/app.js
+static/geo-assets.js
+static/link-logos.js
 static/detail.css
 static/index.html
 static/photo-tools.js
@@ -59,6 +63,7 @@ static/v7.css
 static/v8.css
 static/v9.css
 static/v10.css
+static/v11.css
 tests/test_app.py
 tests/test_agent_api.py
 tests/test_connector_http.py
