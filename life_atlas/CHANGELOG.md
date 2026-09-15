@@ -3,9 +3,15 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
-## 0.18.1
+## 0.18.2
 
 - Made every clickable card — events, years, places, trips, diary entries, month headings and people summaries — a real control that can be reached with Tab, opened with Enter or Space and announced as a button.
+- Life Atlas now runs as an unprivileged account inside the add-on container instead of as root.
+- The Life Atlas data directory, database, exports and backups are now created so that only their owner can read them.
+- Google Photos connection problems are now explained in the add-on log instead of failing silently.
+
+## 0.18.1
+
 - Fixed connector web-interface links to use Home Assistant's working app route.
 - Styled the connector web-interface link consistently with the surrounding actions.
 
