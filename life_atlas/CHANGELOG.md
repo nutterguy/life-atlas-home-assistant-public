@@ -5,6 +5,7 @@ displays this file when an app update is available.
 
 ## 0.18.1
 
+- Made every clickable card — events, years, places, trips, diary entries, month headings and people summaries — a real control that can be reached with Tab, opened with Enter or Space and announced as a button.
 - Fixed connector web-interface links to use Home Assistant's working app route.
 - Styled the connector web-interface link consistently with the surrounding actions.
 

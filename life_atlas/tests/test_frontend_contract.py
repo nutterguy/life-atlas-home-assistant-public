@@ -86,6 +86,26 @@ class FrontendContractTests(unittest.TestCase):
         self.assertNotIn('<i class="person-event-dot ', self.script)
         self.assertNotIn('<span class="person-event-label"', self.script)
 
+    def test_card_navigation_uses_native_keyboard_controls(self):
+        self.assertNotRegex(self.script, r"<(?:div|span|i|p|article|section)\b[^>]*\bonclick=")
+        for markup in (
+            '<button type="button" class="${compact?\'detail-event\':\'event clickable\'}"',
+            '<button type="button" class="notable visual-card"',
+            '<button type="button" class="notable yearbook-card visual-card"',
+            '<button type="button" class="card clickable visual-card"',
+            '<button type="button" class="day-event"',
+            '<button type="button" class="diary-event"',
+            '<button type="button" class="day-date"',
+            '<button type="button" class="people-row"',
+        ):
+            self.assertIn(markup, self.script)
+
+    def test_card_buttons_keep_the_block_card_presentation(self):
+        self.assertRegex(
+            self.css,
+            r"\.event\.clickable,\.card\.clickable,\.notable,\.detail-event,\.day-event,\.diary-event\{[^}]*font:inherit[^}]*text-align:left",
+        )
+
     def test_permanently_expanded_sidebar_has_no_dead_pin_control(self):
         self.assertNotIn('id="sidebar-pin"', self.html)
         self.assertNotIn("$('#sidebar-pin')", self.script)
