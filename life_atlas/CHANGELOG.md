@@ -3,6 +3,10 @@
 Notable user-visible changes to Life Atlas are recorded here. Home Assistant
 displays this file when an app update is available.
 
+## 0.18.3
+
+- Life Atlas now reports its real version when started outside the add-on wrapper, instead of a fixed placeholder that had fallen twelve releases behind.
+
 ## 0.18.2
 
 - Made every clickable card — events, years, places, trips, diary entries, month headings and people summaries — a real control that can be reached with Tab, opened with Enter or Space and announced as a button.

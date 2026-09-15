@@ -10,6 +10,36 @@ This private repository is the canonical source for the Home Assistant edition. 
 4. Run `python scripts/validate_repository.py` after code changes, or `python scripts/deploy.py` when preparing a release.
 5. Keep `CHANGELOG.md` current. Every release version must have a concise, user-facing entry; validation rejects releases without one.
 
+## Working alongside other agents
+
+Another agent may be working in this repository at the same time. Assume it.
+
+1. Run `git fetch origin` and confirm local `main` matches `origin/main`. Choosing work from a stale checkout wastes effort on problems that are already fixed.
+2. Verify an issue against the current code before fixing it. Issue paths, line numbers and counts go stale, and several in this tracker already are. If the described location no longer matches, re-locate the defect and say so in the fix.
+3. Confirm the defect still exists: search `git log origin/main` and grep the current code. Report "already fixed" rather than inventing a change.
+4. Claim the issue with a comment before starting, so a concurrent agent does not duplicate it.
+5. Work in one isolated git worktree per task, branched from `origin/main`, never from local `main`. Never work in the main checkout while it holds uncommitted changes you did not make.
+6. State the set of files you will edit before editing, and stay inside it. One agent owns a file. Re-verify against current `origin/main` immediately before merging.
+
+## Releasing is not optional
+
+Any change to a file listed in `.public-files` is a release.
+
+Home Assistant decides an update exists by comparing the installed version against `config.yaml`. It never inspects file contents. Republishing changed code under a version that is already installed reaches nobody, reports no error, and leaves every installation on the old build. Seven merged fixes were lost this way once.
+
+- Never merge a shipped-file change to `main` without `python scripts/deploy.py --set-version <next>`.
+- Never add a `CHANGELOG.md` entry under a version that has already been published. Open a new section; the newest section must be the version being shipped.
+- After publishing, verify the **mirror advertises the new version**, not merely that the workflow was green. A publish that republishes an identical version succeeds and achieves nothing.
+- `scripts/validate_repository.py` enforces both rules. It warns locally and fails the publish workflow, where `LIFE_ATLAS_RELEASE_GUARD=error` is set.
+
+## What CI does and does not prove
+
+`validate.yml` runs the Python suite. It does not build the container image and does not start the add-on.
+
+- A green check says nothing about `Dockerfile`, `run.sh` or `config.yaml`. Changes to those are unverified until a real add-on start.
+- A local run with `LIFE_ATLAS_SEED_SAMPLE=true` is a smoke test. It has neither real data density nor the container, so it cannot verify a user interface change or a privilege drop. Do not present it as verification.
+- State plainly what a change has and has not been verified against. "Tests pass" and "this works" are different claims.
+
 ## Invariants
 
 - Preserve Home Assistant Ingress: browser API and asset requests must remain relative, never rooted at `/api` or `/static`.
@@ -26,6 +56,8 @@ This private repository is the canonical source for the Home Assistant edition. 
 - Preserve the restore session token across every upload chunk, validation, and commit request; never log or persist it.
 - Keep `schema.sql` compatible with `nutterguy/life-atlas-windows`.
 - Run integrity, foreign-key, backend, frontend-contract, and live health checks after deployment.
+- `run.sh` must keep LF line endings; CRLF breaks the container. `scripts/deploy.py` can write CRLF on a Windows checkout, so verify the committed blob, not the working copy.
+- An issue that also names `life-atlas-windows` or `life-atlas-connectors` takes `Refs #N`, never `Fixes #N`, so a single-repository fix cannot auto-close work that remains elsewhere.
 
 ## Low-token working rules
 
@@ -47,7 +79,7 @@ For a normal application release, use this sequence and do not rediscover it fro
 2. Add a curated `CHANGELOG.md` entry for the release, then run `python scripts/deploy.py --set-version <version>`. Otherwise run `python scripts/deploy.py`.
 3. Review only the changed-file diff and the single `LIFE_ATLAS_DEPLOY={...}` result. Use `--verbose` only after failure.
 4. Commit and merge/push the focused change to private `main`. The private publish workflow validates and copies the allowlisted snapshot to the public repository.
-5. Check the private publish job and public image-build job statuses. Do not fetch successful logs.
+5. Check the private publish job and public image-build job statuses, then confirm the public mirror's `config.yaml` advertises the new version. A green job that republished an identical version is indistinguishable from success and delivers nothing. Do not fetch successful logs.
 6. When Home Assistant offers the new Life Atlas version, create a backup and install the Life Atlas add-on update through Supervisor/Home Assistant tooling.
 7. Verify the installed add-on is started, then request `/api/health` through Ingress and confirm `status: ok` and the expected version. Inspect recent add-on logs only if verification fails.
 

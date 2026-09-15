@@ -1,11 +1,33 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 import app as life_atlas
 
-APP_VERSION = os.environ.get("LIFE_ATLAS_VERSION", "0.6.1")
+def _declared_version() -> str:
+    """The add-on version, read from config.yaml when run.sh has not exported it.
+
+    A hard-coded fallback silently goes stale: this read "0.6.1" while the
+    add-on shipped 0.18.x, so anything started outside run.sh misreported which
+    build it was, and that version is what /api/health is trusted to prove
+    after a deployment.
+    """
+    declared = os.environ.get("LIFE_ATLAS_VERSION")
+    if declared:
+        return declared
+    config = Path(__file__).resolve().parent / "config.yaml"
+    try:
+        for line in config.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version:"):
+                return line.split(":", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return "unknown"
+
+
+APP_VERSION = _declared_version()
 # Reloading this module must not wrap an already-wrapped handler: that chains
 # runtime_do_get to itself and every non-health GET recurses until it dies.
 _ORIGINAL_DO_GET = getattr(life_atlas.Handler.do_GET, "life_atlas_original", life_atlas.Handler.do_GET)

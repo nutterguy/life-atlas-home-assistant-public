@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -228,5 +229,65 @@ for path in tracked:
             "Sample data belongs in sample-seed.json and must be synthetic."
         )
 
+# Home Assistant decides an update exists by comparing the installed version
+# string against config.yaml. It never looks at file contents. Republishing
+# changed code under a version that is already installed therefore reaches
+# nobody and reports no error: the mirror updates, every installation stays on
+# the old build, and nothing in the pipeline says so. Seven merged fixes were
+# lost that way once. These two guards make that failure loud.
+
+# 1. The newest changelog section must be the version being shipped. This
+#    catches both halves of the mistake: a version bumped with no entry, and an
+#    entry filed under a version that has already gone out.
+changelog_path = root / "CHANGELOG.md"
+if changelog_path.exists():
+    headings = [
+        line[3:].strip()
+        for line in changelog_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("## ")
+    ]
+    if not headings:
+        raise SystemExit("CHANGELOG.md has no version sections")
+    if headings[0] != config_version.group(1):
+        raise SystemExit(
+            f"CHANGELOG.md's newest section is {headings[0]} but config.yaml ships "
+            f"{config_version.group(1)}. Add a '## {config_version.group(1)}' section at the top; never write the "
+            "entry into a section that has already been published."
+        )
+
+# 2. Shipped files must not change without a version bump. Advisory by default
+#    so that concurrent branches are not forced to fight over the same version
+#    number; set LIFE_ATLAS_RELEASE_GUARD=error (the publish workflow does) to
+#    make it fatal at the point where it actually matters.
+if (root / ".git").exists() and allowlist_path.exists():
+    def _git(*args: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True, check=False,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    introduced = _git(
+        "log", "-S", f'version: "{config_version.group(1)}"', "--format=%H", "--", "config.yaml"
+    ).splitlines()
+    if introduced:
+        base = introduced[-1]
+        changed = set(_git("diff", "--name-only", f"{base}..HEAD").splitlines())
+        # CHANGELOG.md is policed above; a doc-only touch should not demand a bump.
+        shipped_changed = sorted(
+            (changed & allowlisted) - {"CHANGELOG.md", ".public-files"}
+        )
+        if shipped_changed:
+            message = (
+                f"Shipped files changed since {config_version.group(1)} was set, so Home Assistant "
+                "would be offered no update for them: "
+                f"{shipped_changed}. Run 'python scripts/deploy.py --set-version "
+                "<next>' before merging to main."
+            )
+            if os.environ.get("LIFE_ATLAS_RELEASE_GUARD") == "error":
+                raise SystemExit(message)
+            print(f"warning: {message}", file=sys.stderr)
+
 subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=root, check=True)
 print("Repository validation: ok")
+
