@@ -1,6 +1,6 @@
 .nav-icon svg{display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-body,body.sidebar-pinned{grid-template-columns:225px minmax(0,1fr)}
-aside,aside:hover,body.sidebar-pinned aside{width:225px;overflow:hidden;box-shadow:none}
+body{grid-template-columns:225px minmax(0,1fr)}
+aside,aside:hover{width:225px;overflow:hidden;box-shadow:none}
 .brand span,.brand small,.nav-label,.tool-label,.privacy{opacity:1}
 nav button{min-height:42px;isolation:isolate}
 nav button.active{box-shadow:inset 3px 0 0 var(--accent)}
@@ -10,7 +10,7 @@ nav button.active{box-shadow:inset 3px 0 0 var(--accent)}
 .load-error{max-width:680px;margin:48px auto;padding:24px;border:1px solid var(--bad);border-radius:14px;background:#2d1722;color:var(--text)}
 .load-error button{margin-top:12px}
 @media(max-width:800px){
-  aside,aside:hover,body.sidebar-pinned aside{position:sticky;top:0;z-index:100;height:auto;padding:10px 12px;background:#0c1122f5;border-bottom:1px solid var(--line);box-shadow:0 8px 22px #05081266}
+  aside,aside:hover{position:sticky;top:0;z-index:100;height:auto;padding:10px 12px;background:#0c1122f5;border-bottom:1px solid var(--line);box-shadow:0 8px 22px #05081266}
   .brand,.privacy{display:none}
   nav{display:flex;width:100%;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
   nav::-webkit-scrollbar{display:none}
